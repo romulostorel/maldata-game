@@ -10,6 +10,7 @@ local sprite_base = require("src.gen.sprite_base")
 local anim_gen    = require("src.gen.anim_gen")
 local assets      = require("src.assets")
 local effects     = require("src.effects")
+local audio       = require("src.audio")
 local audio_debug = require("src.audio_debug")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
@@ -47,6 +48,7 @@ function love.load()
     love.keyboard.setKeyRepeat(false)
 
     assets.load()
+    audio.load()
 
     math.randomseed(os.time())
     game = state.new(rand_seed())
@@ -115,6 +117,7 @@ function love.mousepressed(x, y, button)
 
     if game.phase == state.PHASE_RESULT then
         if ui.is_restart_clicked(x, y) then
+            audio.play("ui_click")
             state.reset(game, rand_seed())
             effects.clear()
         end

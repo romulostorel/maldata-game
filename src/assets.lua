@@ -5,6 +5,7 @@
 
 local tile_gen = require("src.gen.tile_gen")
 local anim_gen = require("src.gen.anim_gen")
+local ui_gen   = require("src.gen.ui_gen")
 
 local M = {}
 
@@ -27,6 +28,24 @@ M.entity = {
     mage    = nil,
 }
 
+-- Procgen UI chrome (HP bar, restart button, result-screen panel, phase icons).
+-- Sizes pinned here so ui.lua stays free of magic numbers and can ask the
+-- registry for the dimensions it agreed on.
+M.ui = {
+    hp_bar       = nil,
+    button_idle  = nil,
+    button_hover = nil,
+    panel        = nil,
+    phase_icon   = {},
+}
+
+M.HP_BAR_W      = 24
+M.HP_BAR_H      = 6
+M.BUTTON_W      = 200
+M.BUTTON_H      = 50
+M.PANEL_W       = 480
+M.PANEL_H       = 280
+
 local FLOOR_VARIATIONS = 3
 local WALL_VARIATIONS  = 3
 
@@ -46,6 +65,12 @@ function M.load()
     M.entity.warrior = anim_gen.gen_entity_anims("warrior", 5004)
     M.entity.archer  = anim_gen.gen_entity_anims("archer",  5005)
     M.entity.mage    = anim_gen.gen_entity_anims("mage",    5006)
+
+    M.ui.hp_bar       = ui_gen.gen_hp_bar(M.HP_BAR_W, M.HP_BAR_H)
+    M.ui.button_idle  = ui_gen.gen_button(M.BUTTON_W, M.BUTTON_H, false)
+    M.ui.button_hover = ui_gen.gen_button(M.BUTTON_W, M.BUTTON_H, true)
+    M.ui.panel        = ui_gen.gen_panel(M.PANEL_W, M.PANEL_H)
+    M.ui.phase_icon   = ui_gen.gen_phase_icons()
 end
 
 -- Stable per-position variation index. Multipliers are coprime with the

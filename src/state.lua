@@ -1,7 +1,10 @@
 -- Game state: phase machine (build -> invasion -> result -> build), the
 -- current dungeon, placed monsters, the active monster selection, the
 -- live hero (during invasion), and the run RNG used for procgen of
--- entity stats. Pure logic; no LÖVE calls.
+-- entity stats. Logic-only — combat visuals are routed through an
+-- on_event callback so this module stays free of love.graphics. The
+-- single audio dependency is the phase_transition cue, fired directly
+-- whenever state.phase changes via set_phase().
 
 local dungeon = require("src.dungeon")
 local monster = require("src.monster")
@@ -9,6 +12,7 @@ local hero    = require("src.hero")
 local ai      = require("src.ai")
 local rand    = require("src.rand")
 local combat  = require("src.combat")
+local audio   = require("src.audio")
 
 local M = {}
 
@@ -51,6 +55,15 @@ local function index_of(phase)
     end
 end
 
+-- Single chokepoint for phase changes so phase_transition fires exactly
+-- once per real transition, never on a no-op assignment.
+local function set_phase(state, new_phase)
+    if state.phase ~= new_phase then
+        audio.play("phase_transition")
+    end
+    state.phase = new_phase
+end
+
 function M.advance(state)
     local i = index_of(state.phase)
     local next_phase = PHASE_ORDER[(i % #PHASE_ORDER) + 1]
@@ -66,20 +79,20 @@ function M.advance(state)
         state.outcome = nil
     end
 
-    state.phase = next_phase
+    set_phase(state, next_phase)
 end
 
 function M.reset(state, seed)
     state.seed = seed
     state.rng = rand.new(seed)
     state.dungeon = dungeon.generate(seed)
-    state.phase = M.PHASE_BUILD
     state.monsters = {}
     state.selected_monster_type = monster.GOBLIN
     state.hero = nil
     state.outcome = nil
     state.auto_step = true
     state.step_timer = 0
+    set_phase(state, M.PHASE_BUILD)
 end
 
 local function tile_is_free(state, x, y)
@@ -161,8 +174,8 @@ function M.step_invasion(state, on_event)
         end
         local goal = state.dungeon.treasure
         if state.hero.x == goal.x and state.hero.y == goal.y then
-            state.phase = M.PHASE_RESULT
             state.outcome = M.OUTCOME_TREASURE_STOLEN
+            set_phase(state, M.PHASE_RESULT)
             return
         end
     end
@@ -179,8 +192,8 @@ function M.step_invasion(state, on_event)
     end
 
     if not state.hero.alive then
-        state.phase = M.PHASE_RESULT
         state.outcome = M.OUTCOME_HERO_DEAD
+        set_phase(state, M.PHASE_RESULT)
     end
 end
 
