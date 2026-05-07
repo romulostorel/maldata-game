@@ -9,12 +9,17 @@ M.ARCHER  = "archer"
 M.MAGE    = "mage"
 
 -- v1 stat sheet: hp / hp_var / atk / atk_var / range / placeholder color.
+-- All classes are melee (range 1) by design — letting Archer and Mage
+-- shoot from 3-4 tiles away made the defender lose 100% of fights in
+-- playtest, since monsters (range 1) couldn't retaliate from distance.
+-- Class identity now lives in HP/ATK tradeoffs only: tanky-low-DPS
+-- (Warrior), balanced (Archer), glass-cannon (Mage).
 M.CLASSES = {
     [M.WARRIOR] = { hp = 15, hp_var = 3, atk = 4, atk_var = 1, range = 1,
                     color = { 1.00, 0.55, 0.20 } },
-    [M.ARCHER]  = { hp = 10, hp_var = 2, atk = 5, atk_var = 1, range = 3,
+    [M.ARCHER]  = { hp = 10, hp_var = 2, atk = 5, atk_var = 1, range = 1,
                     color = { 0.80, 0.95, 1.00 } },
-    [M.MAGE]    = { hp = 8,  hp_var = 2, atk = 6, atk_var = 2, range = 4,
+    [M.MAGE]    = { hp = 8,  hp_var = 2, atk = 6, atk_var = 2, range = 1,
                     color = { 0.95, 0.50, 0.90 } },
 }
 

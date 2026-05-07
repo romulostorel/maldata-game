@@ -14,12 +14,12 @@ describe("hero", function()
             local a = hero.CLASSES[hero.ARCHER]
             assert.are.equal(10, a.hp); assert.are.equal(2, a.hp_var)
             assert.are.equal(5,  a.atk); assert.are.equal(1, a.atk_var)
-            assert.are.equal(3,  a.range)
+            assert.are.equal(1,  a.range)
 
             local m = hero.CLASSES[hero.MAGE]
             assert.are.equal(8, m.hp); assert.are.equal(2, m.hp_var)
             assert.are.equal(6, m.atk); assert.are.equal(2, m.atk_var)
-            assert.are.equal(4, m.range)
+            assert.are.equal(1, m.range)
         end)
     end)
 

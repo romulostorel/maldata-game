@@ -21,9 +21,10 @@ M.PHASE_INVASION = "invasion"
 M.PHASE_RESULT   = "result"
 
 -- Build-phase economy. Each monster type has a cost in monster.TYPES; the
--- player can spend up to BUDGET total. Replaces the old MAX_MONSTERS=3 cap
--- so picking a Goblin (cost 2) vs an Orc (cost 4) is an actual decision.
-M.BUDGET = 10
+-- player can spend up to BUDGET total. Picked from playtest sims at
+-- ~40% defender win rate against a 3-hero wave — high enough that
+-- placement matters, low enough that the player has real agency.
+M.BUDGET = 14
 
 -- One invasion = a wave of N heroes. The first marches in immediately;
 -- the rest queue up and step onto the entrance one per tick once it's
