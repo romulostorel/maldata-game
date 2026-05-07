@@ -1,0 +1,10 @@
+# Claude Code local prefs
+.claude/settings.local.json
+
+# LÖVE distributables
+*.love
+
+# Editor / OS
+*.swp
+*~
+.DS_Store
