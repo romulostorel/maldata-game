@@ -1,0 +1,45 @@
+package.path = "./?.lua;./?/init.lua;" .. package.path
+
+local monster = require("src.monster")
+
+describe("monster", function()
+    describe("TYPES", function()
+        it("matches the v1 stat sheet", function()
+            assert.are.equal(5,  monster.TYPES[monster.GOBLIN].hp)
+            assert.are.equal(2,  monster.TYPES[monster.GOBLIN].atk)
+            assert.are.equal(1,  monster.TYPES[monster.GOBLIN].range)
+
+            assert.are.equal(10, monster.TYPES[monster.ORC].hp)
+            assert.are.equal(4,  monster.TYPES[monster.ORC].atk)
+            assert.are.equal(1,  monster.TYPES[monster.ORC].range)
+
+            assert.are.equal(8,  monster.TYPES[monster.SLIME].hp)
+            assert.are.equal(3,  monster.TYPES[monster.SLIME].atk)
+            assert.are.equal(1,  monster.TYPES[monster.SLIME].range)
+        end)
+    end)
+
+    describe("new", function()
+        it("creates an entity with full HP and the requested position", function()
+            local m = monster.new(monster.GOBLIN, 5, 7)
+            assert.are.equal(monster.GOBLIN, m.type)
+            assert.are.equal(5, m.x)
+            assert.are.equal(7, m.y)
+            assert.are.equal(5, m.hp)
+            assert.are.equal(5, m.max_hp)
+            assert.are.equal(2, m.atk)
+            assert.are.equal(1, m.range)
+            assert.is_true(m.alive)
+        end)
+
+        it("uses the requested type's stats", function()
+            local orc = monster.new(monster.ORC, 1, 1)
+            assert.are.equal(10, orc.hp)
+            assert.are.equal(4, orc.atk)
+
+            local slime = monster.new(monster.SLIME, 1, 1)
+            assert.are.equal(8, slime.hp)
+            assert.are.equal(3, slime.atk)
+        end)
+    end)
+end)

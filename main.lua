@@ -1,7 +1,8 @@
--- Entry point: wires LÖVE callbacks to the game state.
+-- Entry point: wires LÖVE callbacks to the game state and input router.
 
 local render = require("src.render")
 local state = require("src.state")
+local input = require("src.input")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
@@ -26,6 +27,8 @@ end
 
 function love.draw()
     render.draw_dungeon(game.dungeon)
+    render.draw_monsters(game.monsters)
+    render.draw_build_cursor(game)
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print(
@@ -33,8 +36,12 @@ function love.draw()
             :format(game.phase:upper(), game.seed, love.timer.getFPS()),
         8, 8)
     love.graphics.print(
-        "[SPACE] next phase    [R] new dungeon    [ESC] quit",
+        ("[1] goblin   [2] orc   [3] slime    selected: %s    placed: %d/%d")
+            :format(game.selected_monster_type, #game.monsters, state.MAX_MONSTERS),
         8, 24)
+    love.graphics.print(
+        "[CLICK] place    [SPACE] next phase    [R] new dungeon    [ESC] quit",
+        8, 40)
 end
 
 function love.keypressed(key)
@@ -44,5 +51,11 @@ function love.keypressed(key)
         state.advance(game)
     elseif key == "r" then
         state.reset(game, rand_seed())
+    else
+        input.handle_key(game, key)
     end
+end
+
+function love.mousepressed(x, y, button)
+    input.handle_mouse(game, x, y, button)
 end
