@@ -1,16 +1,18 @@
 -- Entry point: wires LÖVE callbacks to the game state, input router,
 -- world renderer, and HUD.
 
-local render  = require("src.render")
-local state   = require("src.state")
-local input   = require("src.input")
-local ui      = require("src.ui")
-local palette = require("src.palette")
+local render      = require("src.render")
+local state       = require("src.state")
+local input       = require("src.input")
+local ui          = require("src.ui")
+local palette     = require("src.palette")
+local sprite_base = require("src.gen.sprite_base")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
 local game
-local show_palette = false
+local show_palette     = false
+local show_sprite_base = false
 
 local function rand_seed()
     return math.random(1, 2147483646)
@@ -41,6 +43,7 @@ function love.draw()
     ui.draw_result(game)
 
     if show_palette then palette.draw_debug() end
+    if show_sprite_base then sprite_base.draw_debug() end
 end
 
 function love.keypressed(key)
@@ -48,6 +51,8 @@ function love.keypressed(key)
         love.event.quit()
     elseif key == "f1" then
         show_palette = not show_palette
+    elseif key == "f2" then
+        show_sprite_base = not show_sprite_base
     elseif key == "r" then
         state.reset(game, rand_seed())
     elseif game.phase == state.PHASE_INVASION then
