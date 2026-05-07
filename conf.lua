@@ -13,8 +13,8 @@ function love.conf(t)
     t.window.vsync = 1
 
     -- Disable unused modules to keep startup lean.
-    t.modules.audio = false
-    t.modules.sound = false
+    t.modules.audio = true
+    t.modules.sound = true
     t.modules.physics = false
     t.modules.joystick = false
     t.modules.video = false

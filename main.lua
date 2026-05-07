@@ -10,6 +10,7 @@ local sprite_base = require("src.gen.sprite_base")
 local anim_gen    = require("src.gen.anim_gen")
 local assets      = require("src.assets")
 local effects     = require("src.effects")
+local audio_debug = require("src.audio_debug")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
@@ -17,6 +18,7 @@ local game
 local show_palette     = false
 local show_sprite_base = false
 local show_entities    = false
+local show_audio       = false
 
 local function rand_seed()
     return math.random(1, 2147483646)
@@ -71,6 +73,7 @@ function love.draw()
     if show_palette then palette.draw_debug() end
     if show_sprite_base then sprite_base.draw_debug() end
     if show_entities then anim_gen.draw_debug() end
+    if show_audio then audio_debug.draw() end
 end
 
 function love.keypressed(key)
@@ -82,6 +85,8 @@ function love.keypressed(key)
         show_sprite_base = not show_sprite_base
     elseif key == "f3" then
         show_entities = not show_entities
+    elseif key == "f4" then
+        show_audio = not show_audio
     elseif key == "r" then
         state.reset(game, rand_seed())
         effects.clear()
@@ -102,6 +107,11 @@ end
 
 function love.mousepressed(x, y, button)
     if button ~= 1 then return end
+
+    if show_audio then
+        audio_debug.mousepressed(x, y, button)
+        return
+    end
 
     if game.phase == state.PHASE_RESULT then
         if ui.is_restart_clicked(x, y) then
