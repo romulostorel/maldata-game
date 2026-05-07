@@ -114,6 +114,7 @@ end
 function M.try_place_monster(state, x, y)
     if not M.can_place_monster(state, x, y) then return false end
     table.insert(state.monsters, monster.new(state.selected_monster_type, x, y))
+    audio.play("monster_place")
     return true
 end
 

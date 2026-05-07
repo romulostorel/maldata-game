@@ -21,6 +21,7 @@ local SFX = {
     ui_hover         = { gen = sfx_gen.ui_hover,         volume = 0.30 },
     ui_click         = { gen = sfx_gen.ui_click,         volume = 0.55 },
     phase_transition = { gen = sfx_gen.phase_transition, volume = 0.70 },
+    monster_place    = { gen = sfx_gen.monster_place,    volume = 0.65 },
 }
 
 local sources = {}

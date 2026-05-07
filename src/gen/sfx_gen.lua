@@ -19,6 +19,16 @@ local function concat(a, b)
     return a
 end
 
+-- Mix b into a at the start, scaled. a[i] = a[i] * a_scale + b[i] * b_scale
+-- for i in [1, #b]. Anything past #b in `a` keeps its original value, so
+-- `b` works as a transient stamped on top of a longer body.
+local function layer_head(a, a_scale, b, b_scale)
+    for i = 1, #b do
+        a[i] = a[i] * a_scale + b[i] * b_scale
+    end
+    return a
+end
+
 -- Subtle 30ms triangle blip — high enough to read as "hover", short enough
 -- to not feel like a notification.
 function M.ui_hover()
@@ -44,6 +54,19 @@ function M.phase_transition()
     local n2 = waveform.triangle(495, 0.22, SR)
     envelope.adsr(n2, SR, 0.005, 0.05, 0.5, 0.165)
     return concat(n1, n2)
+end
+
+-- 200ms placement thunk. Low triangle body provides weight; a 12ms noise
+-- tick at the head reads as the moment of contact. Mix scales chosen so
+-- the peak (body 0.65 + tick 0.35 = 1.0) doesn't clip when baked.
+function M.monster_place()
+    local body = waveform.triangle(110, 0.20, SR)
+    envelope.adsr(body, SR, 0.005, 0.05, 0.55, 0.145)
+
+    local tick = waveform.noise(0, 0.012, SR, 7777)
+    envelope.adsr(tick, SR, 0.001, 0.004, 0.0, 0.007)
+
+    return layer_head(body, 0.65, tick, 0.35)
 end
 
 return M
