@@ -70,7 +70,7 @@ describe("state", function()
 
         it("starts with no hero and no outcome", function()
             local s = state.new(1)
-            assert.is_nil(s.hero)
+            assert.is_nil(s.heroes[1])
             assert.is_nil(s.outcome)
         end)
 
@@ -147,7 +147,7 @@ describe("state", function()
             state.advance(s)
             s.outcome = state.OUTCOME_TREASURE_STOLEN
             state.reset(s, 42)
-            assert.is_nil(s.hero)
+            assert.is_nil(s.heroes[1])
             assert.is_nil(s.outcome)
         end)
 
@@ -459,11 +459,11 @@ describe("state", function()
     describe("invasion", function()
         it("spawns a hero at the entrance when entering invasion", function()
             local s = state.new(7)
-            assert.is_nil(s.hero)
+            assert.is_nil(s.heroes[1])
             state.advance(s)
-            assert.is_not_nil(s.hero)
-            assert.are.equal(s.dungeon.entrance.x, s.hero.x)
-            assert.are.equal(s.dungeon.entrance.y, s.hero.y)
+            assert.is_not_nil(s.heroes[1])
+            assert.are.equal(s.dungeon.entrance.x, s.heroes[1].x)
+            assert.are.equal(s.dungeon.entrance.y, s.heroes[1].y)
         end)
 
         it("seeds the run rng so hero gen is deterministic per seed", function()
@@ -471,31 +471,31 @@ describe("state", function()
             state.advance(a)
             local b = state.new(7)
             state.advance(b)
-            assert.are.equal(a.hero.class, b.hero.class)
-            assert.are.equal(a.hero.hp, b.hero.hp)
-            assert.are.equal(a.hero.atk, b.hero.atk)
+            assert.are.equal(a.heroes[1].class, b.heroes[1].class)
+            assert.are.equal(a.heroes[1].hp, b.heroes[1].hp)
+            assert.are.equal(a.heroes[1].atk, b.heroes[1].atk)
         end)
 
         it("clears the hero on advance back to build", function()
             local s = state.new(7)
             state.advance(s)
             state.advance(s)
-            assert.is_not_nil(s.hero)
+            assert.is_not_nil(s.heroes[1])
             state.advance(s)
-            assert.is_nil(s.hero)
+            assert.is_nil(s.heroes[1])
         end)
 
         it("re-spawns a fresh hero on a second invasion", function()
             local s = state.new(7)
             state.advance(s)
-            local first = s.hero
+            local first = s.heroes[1]
             state.advance(s); state.advance(s)
             state.advance(s)
-            assert.is_not_nil(s.hero)
-            assert.are.equal(s.dungeon.entrance.x, s.hero.x)
-            assert.are.equal(s.dungeon.entrance.y, s.hero.y)
-            assert.are.equal(s.hero.max_hp, s.hero.hp)
-            assert.are_not.equal(first, s.hero)
+            assert.is_not_nil(s.heroes[1])
+            assert.are.equal(s.dungeon.entrance.x, s.heroes[1].x)
+            assert.are.equal(s.dungeon.entrance.y, s.heroes[1].y)
+            assert.are.equal(s.heroes[1].max_hp, s.heroes[1].hp)
+            assert.are_not.equal(first, s.heroes[1])
         end)
 
         describe("step_invasion (movement)", function()
@@ -503,11 +503,11 @@ describe("state", function()
                 local s = state.new(7)
                 state.advance(s)
                 local d_before = grid.manhattan(
-                    s.hero.x, s.hero.y,
+                    s.heroes[1].x, s.heroes[1].y,
                     s.dungeon.treasure.x, s.dungeon.treasure.y)
                 state.step_invasion(s)
                 local d_after = grid.manhattan(
-                    s.hero.x, s.hero.y,
+                    s.heroes[1].x, s.heroes[1].y,
                     s.dungeon.treasure.x, s.dungeon.treasure.y)
                 assert.are.equal(d_before - 1, d_after)
             end)
@@ -521,14 +521,14 @@ describe("state", function()
                 end
                 assert.are.equal(state.PHASE_RESULT, s.phase)
                 assert.are.equal(state.OUTCOME_TREASURE_STOLEN, s.outcome)
-                assert.are.equal(s.dungeon.treasure.x, s.hero.x)
-                assert.are.equal(s.dungeon.treasure.y, s.hero.y)
+                assert.are.equal(s.dungeon.treasure.x, s.heroes[1].x)
+                assert.are.equal(s.dungeon.treasure.y, s.heroes[1].y)
             end)
 
             it("no-ops outside the INVASION phase", function()
                 local s = state.new(7)
                 state.step_invasion(s)
-                assert.is_nil(s.hero)
+                assert.is_nil(s.heroes[1])
                 assert.are.equal(state.PHASE_BUILD, s.phase)
             end)
         end)
@@ -537,60 +537,156 @@ describe("state", function()
             it("hero attacks an adjacent monster instead of moving", function()
                 local s = state.new(7)
                 state.advance(s)
-                local hx, hy = s.hero.x, s.hero.y
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
                 local mx, my = first_floor_neighbor(s, hx, hy)
                 local m = inject_monster(s, monster.GOBLIN, mx, my)
                 local m_hp_before = m.hp
 
                 state.step_invasion(s)
 
-                assert.are.equal(hx, s.hero.x)
-                assert.are.equal(hy, s.hero.y)
-                assert.are.equal(m_hp_before - s.hero.atk, m.hp)
+                assert.are.equal(hx, s.heroes[1].x)
+                assert.are.equal(hy, s.heroes[1].y)
+                assert.are.equal(m_hp_before - s.heroes[1].atk, m.hp)
             end)
 
             it("monster in range attacks the hero on the same turn", function()
                 local s = state.new(7)
                 state.advance(s)
-                local mx, my = first_floor_neighbor(s, s.hero.x, s.hero.y)
+                local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
                 inject_monster(s, monster.ORC, mx, my)
-                local hp_before = s.hero.hp
+                local hp_before = s.heroes[1].hp
 
                 state.step_invasion(s)
 
-                assert.is_true(s.hero.hp < hp_before)
+                assert.is_true(s.heroes[1].hp < hp_before)
             end)
 
-            it("hero death transitions to RESULT with hero_dead", function()
+            it("the wave ends with hero_dead when the last hero falls", function()
+                -- Single-hero wave so a one-shot kill ends the run cleanly.
                 local s = state.new(7)
+                s.num_heroes = 1
                 state.advance(s)
-                s.hero.hp = 1
-                local mx, my = first_floor_neighbor(s, s.hero.x, s.hero.y)
+                s.heroes[1].hp = 1
+                local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
                 inject_monster(s, monster.ORC, mx, my)
 
                 state.step_invasion(s)
 
                 assert.are.equal(state.PHASE_RESULT, s.phase)
                 assert.are.equal(state.OUTCOME_HERO_DEAD, s.outcome)
-                assert.is_false(s.hero.alive)
+                assert.is_false(s.heroes[1].alive)
+            end)
+
+            it("a single hero dying does not end the wave when peers remain", function()
+                local s = state.new(7)
+                state.advance(s)
+                assert.is_true(s.num_heroes > 1)
+                s.heroes[1].hp = 1
+                local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+                inject_monster(s, monster.ORC, mx, my)
+
+                state.step_invasion(s)
+
+                assert.is_false(s.heroes[1].alive)
+                assert.are.equal(state.PHASE_INVASION, s.phase)
             end)
 
             it("once a monster dies, hero proceeds to move on the following turn", function()
                 local s = state.new(7)
                 state.advance(s)
-                local hx, hy = s.hero.x, s.hero.y
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
                 local mx, my = first_floor_neighbor(s, hx, hy)
                 local m = inject_monster(s, monster.GOBLIN, mx, my)
                 m.hp = 1
 
                 state.step_invasion(s)
                 assert.is_false(m.alive)
-                assert.are.equal(hx, s.hero.x)
-                assert.are.equal(hy, s.hero.y)
-                assert.is_true(s.hero.alive)
+                assert.are.equal(hx, s.heroes[1].x)
+                assert.are.equal(hy, s.heroes[1].y)
+                assert.is_true(s.heroes[1].alive)
 
                 state.step_invasion(s)
-                assert.is_true(s.hero.x ~= hx or s.hero.y ~= hy)
+                assert.is_true(s.heroes[1].x ~= hx or s.heroes[1].y ~= hy)
+            end)
+        end)
+
+        describe("multi-hero waves", function()
+            it("queues additional heroes on advance to invasion", function()
+                local s = state.new(7)
+                state.advance(s)
+                assert.are.equal(1, #s.heroes)
+                assert.are.equal(s.num_heroes - 1, #s.hero_queue)
+            end)
+
+            it("dequeues a hero onto the entrance the tick after it clears", function()
+                local s = state.new(7)
+                state.advance(s)
+                -- One step: heroes[1] moves off the entrance and (at end of
+                -- tick) heroes[2] is pulled onto it. heroes[2] does not act
+                -- this tick, so it remains on the entrance tile.
+                state.step_invasion(s)
+                assert.is_true(s.heroes[1].x ~= s.dungeon.entrance.x
+                    or s.heroes[1].y ~= s.dungeon.entrance.y)
+                assert.are.equal(2, #s.heroes)
+                assert.are.equal(s.dungeon.entrance.x, s.heroes[2].x)
+                assert.are.equal(s.dungeon.entrance.y, s.heroes[2].y)
+            end)
+
+            it("only the leader can occupy the entrance at a time", function()
+                local s = state.new(7)
+                state.advance(s)
+                -- Before stepping, the queue still holds num_heroes - 1.
+                -- A step shouldn't pull anyone new while heroes[1] sits on
+                -- the entrance.
+                local pre_queue = #s.hero_queue
+                -- Pin heroes[1] in place by injecting a monster adjacent so
+                -- it attacks rather than moves.
+                local mx, my = first_floor_neighbor(s,
+                    s.heroes[1].x, s.heroes[1].y)
+                inject_monster(s, monster.GOBLIN, mx, my)
+                state.step_invasion(s)
+                assert.are.equal(s.dungeon.entrance.x, s.heroes[1].x)
+                assert.are.equal(s.dungeon.entrance.y, s.heroes[1].y)
+                assert.are.equal(pre_queue, #s.hero_queue)
+                assert.are.equal(1, #s.heroes)
+            end)
+
+            it("treasure is stolen the moment any hero reaches it", function()
+                local s = state.new(7)
+                state.advance(s)
+                for _ = 1, 200 do
+                    if s.phase == state.PHASE_RESULT then break end
+                    state.step_invasion(s)
+                end
+                assert.are.equal(state.PHASE_RESULT, s.phase)
+                assert.are.equal(state.OUTCOME_TREASURE_STOLEN, s.outcome)
+            end)
+
+            it("paths around peer heroes that occupy the lead tile", function()
+                -- Force heroes[1] to stand still (engaged with a monster)
+                -- and observe heroes[2]'s computed path: it must NOT step
+                -- onto heroes[1]'s tile.
+                local s = state.new(7)
+                state.advance(s)
+                local mx, my = first_floor_neighbor(s,
+                    s.heroes[1].x, s.heroes[1].y)
+                inject_monster(s, monster.GOBLIN, mx, my)
+                -- Step until heroes[2] spawns.
+                for _ = 1, 5 do
+                    if #s.heroes >= 2 then break end
+                    state.step_invasion(s)
+                end
+                -- Forcibly move heroes[1] back to entrance and clear the
+                -- queue so we can isolate heroes[2]'s pathing decision.
+                if #s.heroes >= 2 then
+                    local h1, h2 = s.heroes[1], s.heroes[2]
+                    local path = state.hero_path(s, h2)
+                    if path and #path > 0 then
+                        for _, p in ipairs(path) do
+                            assert.is_false(p.x == h1.x and p.y == h1.y)
+                        end
+                    end
+                end
             end)
         end)
 
@@ -606,7 +702,7 @@ describe("state", function()
                 local path = state.hero_path(s)
                 assert.is_not_nil(path)
                 assert.are.equal(
-                    grid.manhattan(s.hero.x, s.hero.y,
+                    grid.manhattan(s.heroes[1].x, s.heroes[1].y,
                         s.dungeon.treasure.x, s.dungeon.treasure.y),
                     #path)
             end)
@@ -640,49 +736,49 @@ describe("state", function()
                 local s = state.new(7)
                 state.advance(s)
                 s.auto_step = false
-                local hx, hy = s.hero.x, s.hero.y
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
                 state.update(s, 999)
-                assert.are.equal(hx, s.hero.x)
-                assert.are.equal(hy, s.hero.y)
+                assert.are.equal(hx, s.heroes[1].x)
+                assert.are.equal(hy, s.heroes[1].y)
             end)
 
             it("does not step before STEP_INTERVAL elapses", function()
                 local s = state.new(7)
                 state.advance(s)
-                local hx, hy = s.hero.x, s.hero.y
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
                 state.update(s, state.STEP_INTERVAL - 0.001)
-                assert.are.equal(hx, s.hero.x)
-                assert.are.equal(hy, s.hero.y)
+                assert.are.equal(hx, s.heroes[1].x)
+                assert.are.equal(hy, s.heroes[1].y)
             end)
 
             it("steps once after STEP_INTERVAL elapses", function()
                 local s = state.new(7)
                 state.advance(s)
-                local hx, hy = s.hero.x, s.hero.y
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
                 state.update(s, state.STEP_INTERVAL + 0.001)
-                assert.is_true(s.hero.x ~= hx or s.hero.y ~= hy)
+                assert.is_true(s.heroes[1].x ~= hx or s.heroes[1].y ~= hy)
             end)
 
             it("accumulates dt across multiple calls", function()
                 local s = state.new(7)
                 state.advance(s)
-                local hx, hy = s.hero.x, s.hero.y
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
                 for _ = 1, 5 do
                     state.update(s, state.STEP_INTERVAL / 5 + 0.001)
                 end
-                assert.is_true(s.hero.x ~= hx or s.hero.y ~= hy)
+                assert.is_true(s.heroes[1].x ~= hx or s.heroes[1].y ~= hy)
             end)
 
             it("fast-forwards multiple steps when given a large dt", function()
                 local s = state.new(7)
                 state.advance(s)
                 local d_initial = grid.manhattan(
-                    s.hero.x, s.hero.y,
+                    s.heroes[1].x, s.heroes[1].y,
                     s.dungeon.treasure.x, s.dungeon.treasure.y)
                 state.update(s, state.STEP_INTERVAL * 3 + 0.001)
                 if s.phase == state.PHASE_INVASION then
                     local d_after = grid.manhattan(
-                        s.hero.x, s.hero.y,
+                        s.heroes[1].x, s.heroes[1].y,
                         s.dungeon.treasure.x, s.dungeon.treasure.y)
                     assert.is_true(d_initial - d_after >= 3)
                 else
@@ -698,10 +794,10 @@ describe("state", function()
                 -- Run forward until the hero arrives at the treasure.
                 state.update(s, 999)
                 assert.are.equal(state.PHASE_RESULT, s.phase)
-                local frozen_x, frozen_y = s.hero.x, s.hero.y
+                local frozen_x, frozen_y = s.heroes[1].x, s.heroes[1].y
                 state.update(s, 999)
-                assert.are.equal(frozen_x, s.hero.x)
-                assert.are.equal(frozen_y, s.hero.y)
+                assert.are.equal(frozen_x, s.heroes[1].x)
+                assert.are.equal(frozen_y, s.heroes[1].y)
             end)
         end)
     end)

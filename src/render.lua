@@ -94,26 +94,34 @@ end
 
 function M.draw_path(game)
     if game.phase ~= state.PHASE_INVASION then return end
-    local path = state.hero_path(game)
-    if not path then return end
     love.graphics.setColor(COLOR_PATH_DOT)
-    for _, p in ipairs(path) do
-        local px, py = grid.tile_to_pixel(p.x, p.y)
-        love.graphics.circle("fill",
-            px + grid.TILE / 2, py + grid.TILE / 2,
-            grid.TILE * 0.10)
+    for _, h in ipairs(game.heroes) do
+        if h.alive then
+            local path = state.hero_path(game, h)
+            if path then
+                for _, p in ipairs(path) do
+                    local px, py = grid.tile_to_pixel(p.x, p.y)
+                    love.graphics.circle("fill",
+                        px + grid.TILE / 2, py + grid.TILE / 2,
+                        grid.TILE * 0.10)
+                end
+            end
+        end
     end
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-function M.draw_hero(h)
-    if not h then return end
-    local anims = assets.entity[h.class]
-    local img   = pick_image(h, anims, "walk")
-    if not img then return end
-    local px, py = grid.tile_to_pixel(h.x, h.y)
+function M.draw_heroes(heroes)
+    if not heroes then return end
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
+    for _, h in ipairs(heroes) do
+        local anims = assets.entity[h.class]
+        local img   = pick_image(h, anims, "walk")
+        if img then
+            local px, py = grid.tile_to_pixel(h.x, h.y)
+            love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
+        end
+    end
 end
 
 function M.draw_build_cursor(game)

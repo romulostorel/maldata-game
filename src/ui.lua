@@ -51,8 +51,8 @@ function M.draw_hp_bars(game)
     for _, m in ipairs(game.monsters) do
         if m.alive then draw_bar(m, COLOR_BAR_MONS) end
     end
-    if game.hero and game.hero.alive then
-        draw_bar(game.hero, COLOR_BAR_HERO)
+    for _, h in ipairs(game.heroes) do
+        if h.alive then draw_bar(h, COLOR_BAR_HERO) end
     end
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -81,12 +81,15 @@ function M.draw_hud(game)
             ("[1] goblin (2)  [2] orc (4)  [3] slime (3)  [4] wall    selected: %s    budget: %d/%d")
                 :format(sel, state.spent_budget(game), state.BUDGET),
             8, 24)
-    elseif game.phase == state.PHASE_INVASION and game.hero then
+    elseif game.phase == state.PHASE_INVASION then
         love.graphics.setColor(palette.bone)
+        local alive = 0
+        for _, h in ipairs(game.heroes) do
+            if h.alive then alive = alive + 1 end
+        end
         love.graphics.print(
-            ("hero: %s    HP %d/%d    ATK %d    range %d    %s")
-                :format(game.hero.class, game.hero.hp, game.hero.max_hp,
-                    game.hero.atk, game.hero.range,
+            ("heroes: %d alive   queued: %d    %s")
+                :format(alive, #game.hero_queue,
                     game.auto_step and "[AUTO]" or "[PAUSED]"),
             8, 24)
     end

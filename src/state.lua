@@ -25,6 +25,12 @@ M.PHASE_RESULT   = "result"
 -- so picking a Goblin (cost 2) vs an Orc (cost 4) is an actual decision.
 M.BUDGET = 10
 
+-- One invasion = a wave of N heroes. The first marches in immediately;
+-- the rest queue up and step onto the entrance one per tick once it's
+-- clear, so the wave staggers naturally without needing tile stacking.
+-- Tests can override per-state via `state.num_heroes = 1`.
+M.DEFAULT_NUM_HEROES = 3
+
 M.TOOL_MONSTER = "monster"
 M.TOOL_WALL    = "wall"
 
@@ -59,7 +65,9 @@ function M.new(seed)
         placed_walls = {},
         selected_monster_type = monster.GOBLIN,
         selected_tool = M.TOOL_MONSTER,
-        hero = nil,
+        num_heroes = M.DEFAULT_NUM_HEROES,
+        heroes = {},      -- alive (and recently dead) heroes inside the dungeon
+        hero_queue = {},  -- pre-rolled heroes still waiting to enter
         outcome = nil,
         auto_step = true,
         step_timer = 0,
@@ -102,13 +110,25 @@ function M.advance(state)
     local next_phase = PHASE_ORDER[(i % #PHASE_ORDER) + 1]
 
     if next_phase == M.PHASE_INVASION then
-        state.hero = hero.new(state.rng,
-            state.dungeon.entrance.x, state.dungeon.entrance.y)
+        state.heroes = {}
+        state.hero_queue = {}
+        local entrance = state.dungeon.entrance
+        for n = 1, state.num_heroes do
+            local h = hero.new(state.rng, entrance.x, entrance.y)
+            -- The first hero starts on the entrance tile; the rest sit
+            -- in the queue and step in on subsequent ticks.
+            if n == 1 then
+                table.insert(state.heroes, h)
+            else
+                table.insert(state.hero_queue, h)
+            end
+        end
         state.outcome = nil
         state.auto_step = true
         state.step_timer = 0
     elseif next_phase == M.PHASE_BUILD then
-        state.hero = nil
+        state.heroes = {}
+        state.hero_queue = {}
         state.outcome = nil
     end
 
@@ -123,7 +143,9 @@ function M.reset(state, seed)
     state.placed_walls = {}
     state.selected_monster_type = monster.GOBLIN
     state.selected_tool = M.TOOL_MONSTER
-    state.hero = nil
+    state.num_heroes = M.DEFAULT_NUM_HEROES
+    state.heroes = {}
+    state.hero_queue = {}
     state.outcome = nil
     state.auto_step = true
     state.step_timer = 0
@@ -237,30 +259,73 @@ function M.try_remove_wall(state, x, y)
     return true
 end
 
-local function monster_blocker(state)
+-- Combined blocker for hero pathfinding: alive monsters AND alive peer
+-- heroes (excluding `self`) block movement. Without the peer block, heroes
+-- would happily step onto each other's tiles; the queue/spawn logic
+-- assumes the entrance can hold at most one hero at a time.
+local function path_blocker(state, self_hero)
     return function(x, y)
         for _, m in ipairs(state.monsters) do
             if m.alive and m.x == x and m.y == y then return true end
+        end
+        for _, h in ipairs(state.heroes) do
+            if h ~= self_hero and h.alive and h.x == x and h.y == y then
+                return true
+            end
         end
         return false
     end
 end
 
-function M.hero_path(state)
-    if not state.hero or not state.hero.alive then return nil end
+-- Returns the path the given hero would take this tick. With no `h`,
+-- defaults to the lead hero (preserves backward compat for callers that
+-- only know about a single hero).
+function M.hero_path(state, h)
+    h = h or state.heroes[1]
+    if not h or not h.alive then return nil end
     local goal = state.dungeon.treasure
     return ai.find_path(state.dungeon,
-        state.hero.x, state.hero.y, goal.x, goal.y,
-        monster_blocker(state))
+        h.x, h.y, goal.x, goal.y,
+        path_blocker(state, h))
 end
 
-local function find_target_for_hero(state)
+local function find_monster_in_range(state, h)
     for _, m in ipairs(state.monsters) do
-        if m.alive and combat.in_range(state.hero, m) then
-            return m
-        end
+        if m.alive and combat.in_range(h, m) then return m end
     end
     return nil
+end
+
+local function find_hero_in_range(state, m)
+    for _, h in ipairs(state.heroes) do
+        if h.alive and combat.in_range(m, h) then return h end
+    end
+    return nil
+end
+
+local function entrance_occupied(state)
+    local e = state.dungeon.entrance
+    for _, h in ipairs(state.heroes) do
+        if h.alive and h.x == e.x and h.y == e.y then return true end
+    end
+    return false
+end
+
+local function any_hero_alive(state)
+    for _, h in ipairs(state.heroes) do
+        if h.alive then return true end
+    end
+    return false
+end
+
+-- Try to step the next queued hero onto the (clear) entrance tile.
+local function spawn_from_queue(state)
+    if #state.hero_queue == 0 then return end
+    if entrance_occupied(state) then return end
+    local h = table.remove(state.hero_queue, 1)
+    h.x = state.dungeon.entrance.x
+    h.y = state.dungeon.entrance.y
+    table.insert(state.heroes, h)
 end
 
 -- on_event is an optional callback used by the host (main.lua) to react to
@@ -272,43 +337,62 @@ end
 --   on_event("move",   who)            -- fired after a successful step
 function M.step_invasion(state, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
-    if not state.hero or not state.hero.alive then return end
 
-    -- Hero turn: attack a monster in range, otherwise step along the path.
-    local target = find_target_for_hero(state)
-    if target then
-        combat.attack(state.hero, target)
-        if on_event then
-            on_event("attack", state.hero, target)
-            if not target.alive then on_event("death", target) end
-        end
-    else
-        local path = M.hero_path(state)
-        if path and #path > 0 then
-            state.hero.x = path[1].x
-            state.hero.y = path[1].y
-            if on_event then on_event("move", state.hero) end
-        end
-        local goal = state.dungeon.treasure
-        if state.hero.x == goal.x and state.hero.y == goal.y then
-            state.outcome = M.OUTCOME_TREASURE_STOLEN
-            set_phase(state, M.PHASE_RESULT)
-            return
-        end
-    end
-
-    -- Monster turn: every alive monster in range of the hero attacks back.
-    for _, m in ipairs(state.monsters) do
-        if m.alive and state.hero.alive and combat.in_range(m, state.hero) then
-            combat.attack(m, state.hero)
-            if on_event then
-                on_event("attack", m, state.hero)
-                if not state.hero.alive then on_event("death", state.hero) end
+    -- Hero turns: each alive hero attacks the first monster in range, or
+    -- steps along its own path. Iterating a snapshot keeps the order
+    -- deterministic even if state.heroes is mutated mid-loop.
+    local snapshot = {}
+    for i, h in ipairs(state.heroes) do snapshot[i] = h end
+    for _, h in ipairs(snapshot) do
+        if h.alive then
+            local target = find_monster_in_range(state, h)
+            if target then
+                combat.attack(h, target)
+                if on_event then
+                    on_event("attack", h, target)
+                    if not target.alive then on_event("death", target) end
+                end
+            else
+                local path = M.hero_path(state, h)
+                if path and #path > 0 then
+                    h.x = path[1].x
+                    h.y = path[1].y
+                    if on_event then on_event("move", h) end
+                end
+                local goal = state.dungeon.treasure
+                if h.x == goal.x and h.y == goal.y then
+                    state.outcome = M.OUTCOME_TREASURE_STOLEN
+                    set_phase(state, M.PHASE_RESULT)
+                    return
+                end
             end
         end
     end
 
-    if not state.hero.alive then
+    -- Monster turn: each monster swings at the first alive hero in range.
+    -- A monster only retaliates against one hero per tick, even if multiple
+    -- are in range — matches the v1 1:1 combat granularity.
+    for _, m in ipairs(state.monsters) do
+        if m.alive then
+            local target = find_hero_in_range(state, m)
+            if target then
+                combat.attack(m, target)
+                if on_event then
+                    on_event("attack", m, target)
+                    if not target.alive then on_event("death", target) end
+                end
+            end
+        end
+    end
+
+    -- New heroes step onto the entrance only AFTER existing entities act,
+    -- so a freshly spawned hero spends one tick safely on the threshold
+    -- before being targeted or moving. Keeps turn flow predictable for the
+    -- player watching the wave roll in.
+    spawn_from_queue(state)
+
+    -- End of wave: queue empty AND no living hero left in the dungeon.
+    if #state.hero_queue == 0 and not any_hero_alive(state) then
         state.outcome = M.OUTCOME_HERO_DEAD
         set_phase(state, M.PHASE_RESULT)
     end
@@ -329,14 +413,14 @@ end
 function M.update(state, dt, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
     if not state.auto_step then return end
-    if not state.hero or not state.hero.alive then return end
+    -- Idle ticks once the wave is over — wait for the player to advance.
+    if #state.hero_queue == 0 and not any_hero_alive(state) then return end
 
     state.step_timer = state.step_timer + dt
     while state.step_timer >= M.STEP_INTERVAL do
         state.step_timer = state.step_timer - M.STEP_INTERVAL
         M.step_invasion(state, on_event)
-        if state.phase ~= M.PHASE_INVASION
-           or not state.hero or not state.hero.alive then
+        if state.phase ~= M.PHASE_INVASION then
             state.step_timer = 0
             break
         end

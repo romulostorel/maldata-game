@@ -79,7 +79,7 @@ function love.draw()
     render.draw_dungeon(game.dungeon)
     render.draw_monsters(game.monsters)
     render.draw_path(game)
-    render.draw_hero(game.hero)
+    render.draw_heroes(game.heroes)
     render.draw_build_cursor(game)
 
     effects.draw()
