@@ -29,6 +29,29 @@ local function layer_head(a, a_scale, b, b_scale)
     return a
 end
 
+-- Park-Miller MINSTD seeded RNG for variation jitter. Returns a closure
+-- that yields successive values in [0, 1). Used by variation-eligible
+-- generators so audio.lua can bake N distinct variants by seeding with
+-- N different integers.
+local function jitter_rng(seed)
+    local s = (seed or 1) % 2147483647
+    if s <= 0 then s = s + 2147483646 end
+    return function()
+        s = (s * 16807) % 2147483647
+        return s / 2147483647
+    end
+end
+
+-- Symmetric ±pct jitter. rng() in [0, 1) → multiplier in [1-pct, 1+pct).
+local function jitter(rng, value, pct)
+    return value * (1 + (rng() * 2 - 1) * pct)
+end
+
+-- Pull an integer noise seed off the rng. Stays well below MINSTD's modulus.
+local function noise_seed(rng)
+    return math.floor(rng() * 1e9) + 1
+end
+
 -- Subtle 30ms triangle blip — high enough to read as "hover", short enough
 -- to not feel like a notification.
 function M.ui_hover()
@@ -71,11 +94,14 @@ end
 
 -- 70ms footstep tap. Quiet by design — fires on every hero step. A short
 -- noise burst (the contact) layered on a low triangle (the foot weight).
-function M.hero_footstep()
-    local body = waveform.triangle(180, 0.07, SR)
+-- Seed jitters the body pitch ±5% and reseeds the noise tap so repeated
+-- footsteps sound subtly different.
+function M.hero_footstep(seed)
+    local rng = jitter_rng(seed)
+    local body = waveform.triangle(jitter(rng, 180, 0.05), 0.07, SR)
     envelope.adsr(body, SR, 0.005, 0.020, 0.30, 0.045)
 
-    local tap = waveform.noise(0, 0.040, SR, 4242)
+    local tap = waveform.noise(0, 0.040, SR, noise_seed(rng))
     envelope.adsr(tap, SR, 0.002, 0.010, 0.0, 0.028)
 
     return layer_head(body, 0.5, tap, 0.5)
@@ -83,12 +109,14 @@ end
 
 -- 200ms swoosh-style hero attack. Shaped noise reads as the swing arc;
 -- a brief mid triangle accent gives it tonal presence so it doesn't
--- disappear into ambient noise once that exists.
-function M.hero_attack()
-    local swoosh = waveform.noise(0, 0.20, SR, 1357)
+-- disappear into ambient noise once that exists. Variation: noise reseed
+-- + accent pitch ±4%.
+function M.hero_attack(seed)
+    local rng = jitter_rng(seed)
+    local swoosh = waveform.noise(0, 0.20, SR, noise_seed(rng))
     envelope.adsr(swoosh, SR, 0.008, 0.040, 0.30, 0.152)
 
-    local accent = waveform.triangle(440, 0.08, SR)
+    local accent = waveform.triangle(jitter(rng, 440, 0.04), 0.08, SR)
     envelope.adsr(accent, SR, 0.002, 0.020, 0.50, 0.058)
 
     return layer_head(swoosh, 0.55, accent, 0.45)
@@ -96,11 +124,13 @@ end
 
 -- 150ms impact punch. Same transient+body recipe as monster_place but
 -- tighter and pitched a bit higher — reads as "ow" rather than "thud".
-function M.hit_impact()
-    local body = waveform.triangle(220, 0.15, SR)
+-- Variation: body pitch ±5% + crack reseed.
+function M.hit_impact(seed)
+    local rng = jitter_rng(seed)
+    local body = waveform.triangle(jitter(rng, 220, 0.05), 0.15, SR)
     envelope.adsr(body, SR, 0.001, 0.030, 0.50, 0.119)
 
-    local crack = waveform.noise(0, 0.020, SR, 9090)
+    local crack = waveform.noise(0, 0.020, SR, noise_seed(rng))
     envelope.adsr(crack, SR, 0.001, 0.005, 0.0, 0.014)
 
     return layer_head(body, 0.55, crack, 0.45)
@@ -112,12 +142,14 @@ end
 -- Attacks ~150–280ms, deaths 350–500ms with a tonal descent.
 -- ---------------------------------------------------------------------------
 
--- Goblin attack: 150ms square yelp + small noise crack.
-function M.monster_attack_goblin()
-    local body = waveform.square(660, 0.15, SR)
+-- Goblin attack: 150ms square yelp + small noise crack. Variation: pitch
+-- ±4% + crack reseed.
+function M.monster_attack_goblin(seed)
+    local rng = jitter_rng(seed)
+    local body = waveform.square(jitter(rng, 660, 0.04), 0.15, SR)
     envelope.adsr(body, SR, 0.005, 0.030, 0.40, 0.115)
 
-    local crack = waveform.noise(0, 0.015, SR, 1212)
+    local crack = waveform.noise(0, 0.015, SR, noise_seed(rng))
     envelope.adsr(crack, SR, 0.001, 0.005, 0.0, 0.009)
 
     return layer_head(body, 0.55, crack, 0.45)
@@ -125,11 +157,13 @@ end
 
 -- Orc attack: 280ms low sawtooth growl + rumble noise. Sawtooth's harmonic
 -- richness reads as "throaty" where a triangle would feel polite.
-function M.monster_attack_orc()
-    local body = waveform.sawtooth(140, 0.28, SR)
+-- Variation: pitch ±5% + rumble reseed.
+function M.monster_attack_orc(seed)
+    local rng = jitter_rng(seed)
+    local body = waveform.sawtooth(jitter(rng, 140, 0.05), 0.28, SR)
     envelope.adsr(body, SR, 0.010, 0.060, 0.60, 0.210)
 
-    local rumble = waveform.noise(0, 0.080, SR, 3434)
+    local rumble = waveform.noise(0, 0.080, SR, noise_seed(rng))
     envelope.adsr(rumble, SR, 0.005, 0.025, 0.30, 0.050)
 
     return layer_head(body, 0.55, rumble, 0.45)
@@ -137,11 +171,13 @@ end
 
 -- Slime attack: 220ms wet smack — heavier on noise than tone, with a
 -- low triangle so it has body. The noise-heavy mix gives the gurgle.
-function M.monster_attack_slime()
-    local body = waveform.triangle(95, 0.22, SR)
+-- Variation: pitch ±5% + goo reseed.
+function M.monster_attack_slime(seed)
+    local rng = jitter_rng(seed)
+    local body = waveform.triangle(jitter(rng, 95, 0.05), 0.22, SR)
     envelope.adsr(body, SR, 0.010, 0.050, 0.50, 0.160)
 
-    local goo = waveform.noise(0, 0.18, SR, 5656)
+    local goo = waveform.noise(0, 0.18, SR, noise_seed(rng))
     envelope.adsr(goo, SR, 0.008, 0.060, 0.40, 0.112)
 
     return layer_head(body, 0.40, goo, 0.60)
