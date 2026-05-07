@@ -6,23 +6,13 @@
 -- Pure logic — no LÖVE calls, runs headless under busted.
 
 local grid = require("src.grid")
+local rand = require("src.rand")
 
 local M = {}
 
 M.FLOOR = 0
 M.WALL = 1
 M.MIN_DOOR_TREASURE_DIST = 6
-
--- Park-Miller MINSTD: deterministic across Lua versions, no bitops needed.
--- The largest intermediate is state * 16807 < 2^45, exact in float64.
-local function make_rng(seed)
-    local state = seed % 2147483647
-    if state <= 0 then state = state + 2147483646 end
-    return function(n)
-        state = (state * 16807) % 2147483647
-        return (state % n) + 1 -- inclusive 1..n
-    end
-end
 
 local function build_room(W, H)
     local g = {}
@@ -37,33 +27,33 @@ local function build_room(W, H)
 end
 
 -- Random non-corner perimeter tile.
-local function random_door(rand, W, H)
-    local edge = rand(4) -- 1=top 2=right 3=bottom 4=left
-    if edge == 1 then return rand(W - 2) + 1, 1 end
-    if edge == 2 then return W, rand(H - 2) + 1 end
-    if edge == 3 then return rand(W - 2) + 1, H end
-    return 1, rand(H - 2) + 1
+local function random_door(rng, W, H)
+    local edge = rng(4) -- 1=top 2=right 3=bottom 4=left
+    if edge == 1 then return rng(W - 2) + 1, 1 end
+    if edge == 2 then return W, rng(H - 2) + 1 end
+    if edge == 3 then return rng(W - 2) + 1, H end
+    return 1, rng(H - 2) + 1
 end
 
-local function random_interior(rand, W, H)
-    return rand(W - 2) + 1, rand(H - 2) + 1
+local function random_interior(rng, W, H)
+    return rng(W - 2) + 1, rng(H - 2) + 1
 end
 
 function M.generate(seed)
-    local rand = make_rng(seed)
+    local rng = rand.new(seed)
     local W, H = grid.WIDTH, grid.HEIGHT
 
     local g = build_room(W, H)
 
-    local dx, dy = random_door(rand, W, H)
+    local dx, dy = random_door(rng, W, H)
     g[dy][dx] = M.FLOOR -- carve the door
 
-    local tx, ty = random_interior(rand, W, H)
+    local tx, ty = random_interior(rng, W, H)
     for _ = 1, 100 do
         if grid.manhattan(dx, dy, tx, ty) >= M.MIN_DOOR_TREASURE_DIST then
             break
         end
-        tx, ty = random_interior(rand, W, H)
+        tx, ty = random_interior(rng, W, H)
     end
 
     return {

@@ -28,6 +28,8 @@ end
 function love.draw()
     render.draw_dungeon(game.dungeon)
     render.draw_monsters(game.monsters)
+    render.draw_path(game)
+    render.draw_hero(game.hero)
     render.draw_build_cursor(game)
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -35,12 +37,26 @@ function love.draw()
         ("PHASE: %s    seed: %d    FPS: %d")
             :format(game.phase:upper(), game.seed, love.timer.getFPS()),
         8, 8)
+
+    if game.phase == state.PHASE_BUILD then
+        love.graphics.print(
+            ("[1] goblin   [2] orc   [3] slime    selected: %s    placed: %d/%d")
+                :format(game.selected_monster_type, #game.monsters, state.MAX_MONSTERS),
+            8, 24)
+    elseif game.phase == state.PHASE_INVASION and game.hero then
+        love.graphics.print(
+            ("hero: %s    HP %d/%d    ATK %d    range %d")
+                :format(game.hero.class, game.hero.hp, game.hero.max_hp,
+                    game.hero.atk, game.hero.range),
+            8, 24)
+    elseif game.phase == state.PHASE_RESULT then
+        love.graphics.print(
+            ("outcome: %s"):format(game.outcome or "?"),
+            8, 24)
+    end
+
     love.graphics.print(
-        ("[1] goblin   [2] orc   [3] slime    selected: %s    placed: %d/%d")
-            :format(game.selected_monster_type, #game.monsters, state.MAX_MONSTERS),
-        8, 24)
-    love.graphics.print(
-        "[CLICK] place    [SPACE] next phase    [R] new dungeon    [ESC] quit",
+        "[SPACE] advance / step turn    [R] new run    [ESC] quit",
         8, 40)
 end
 
@@ -48,7 +64,11 @@ function love.keypressed(key)
     if key == "escape" then
         love.event.quit()
     elseif key == "space" then
-        state.advance(game)
+        if game.phase == state.PHASE_INVASION then
+            state.step_invasion(game)
+        else
+            state.advance(game)
+        end
     elseif key == "r" then
         state.reset(game, rand_seed())
     else

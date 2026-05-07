@@ -43,6 +43,12 @@ describe("state", function()
             assert.are.equal(0, #s.monsters)
             assert.are.equal(monster.GOBLIN, s.selected_monster_type)
         end)
+
+        it("starts with no hero and no outcome", function()
+            local s = state.new(1)
+            assert.is_nil(s.hero)
+            assert.is_nil(s.outcome)
+        end)
     end)
 
     describe("advance", function()
@@ -85,6 +91,15 @@ describe("state", function()
             state.reset(s, 42)
             assert.are.equal(0, #s.monsters)
             assert.are.equal(monster.GOBLIN, s.selected_monster_type)
+        end)
+
+        it("clears the hero and outcome", function()
+            local s = state.new(7)
+            state.advance(s) -- spawns hero
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            state.reset(s, 42)
+            assert.is_nil(s.hero)
+            assert.is_nil(s.outcome)
         end)
     end)
 
@@ -163,6 +178,105 @@ describe("state", function()
             local s = state.new(1)
             assert.is_false(state.select_monster_type(s, "dragon"))
             assert.are.equal(monster.GOBLIN, s.selected_monster_type)
+        end)
+    end)
+
+    describe("invasion", function()
+        it("spawns a hero at the entrance when entering invasion", function()
+            local s = state.new(7)
+            assert.is_nil(s.hero)
+            state.advance(s)
+            assert.is_not_nil(s.hero)
+            assert.are.equal(s.dungeon.entrance.x, s.hero.x)
+            assert.are.equal(s.dungeon.entrance.y, s.hero.y)
+        end)
+
+        it("seeds the run rng so hero gen is deterministic per seed", function()
+            local a = state.new(7)
+            state.advance(a)
+            local b = state.new(7)
+            state.advance(b)
+            assert.are.equal(a.hero.class, b.hero.class)
+            assert.are.equal(a.hero.hp, b.hero.hp)
+            assert.are.equal(a.hero.atk, b.hero.atk)
+        end)
+
+        it("clears the hero on advance back to build", function()
+            local s = state.new(7)
+            state.advance(s) -- INVASION
+            state.advance(s) -- RESULT (hero retained for the result screen)
+            assert.is_not_nil(s.hero)
+            state.advance(s) -- BUILD
+            assert.is_nil(s.hero)
+        end)
+
+        it("re-spawns a fresh hero on a second invasion", function()
+            local s = state.new(7)
+            state.advance(s) -- spawn 1
+            local first = s.hero
+            state.advance(s); state.advance(s) -- result -> build (clears hero)
+            state.advance(s) -- spawn 2
+            assert.is_not_nil(s.hero)
+            -- Same seed and the rng has advanced, so stats may differ; but the
+            -- hero must be back at the entrance with full HP.
+            assert.are.equal(s.dungeon.entrance.x, s.hero.x)
+            assert.are.equal(s.dungeon.entrance.y, s.hero.y)
+            assert.are.equal(s.hero.max_hp, s.hero.hp)
+            -- Same table identity must NOT be reused (fresh entity).
+            assert.are_not.equal(first, s.hero)
+        end)
+
+        describe("step_invasion", function()
+            it("moves the hero one tile closer to the treasure", function()
+                local s = state.new(7)
+                state.advance(s)
+                local d_before = grid.manhattan(
+                    s.hero.x, s.hero.y,
+                    s.dungeon.treasure.x, s.dungeon.treasure.y)
+                state.step_invasion(s)
+                local d_after = grid.manhattan(
+                    s.hero.x, s.hero.y,
+                    s.dungeon.treasure.x, s.dungeon.treasure.y)
+                assert.are.equal(d_before - 1, d_after)
+            end)
+
+            it("transitions to RESULT with treasure_stolen when hero arrives", function()
+                local s = state.new(7)
+                state.advance(s)
+                for _ = 1, 200 do
+                    if s.phase == state.PHASE_RESULT then break end
+                    state.step_invasion(s)
+                end
+                assert.are.equal(state.PHASE_RESULT, s.phase)
+                assert.are.equal(state.OUTCOME_TREASURE_STOLEN, s.outcome)
+                assert.are.equal(s.dungeon.treasure.x, s.hero.x)
+                assert.are.equal(s.dungeon.treasure.y, s.hero.y)
+            end)
+
+            it("no-ops outside the INVASION phase", function()
+                local s = state.new(7)
+                state.step_invasion(s) -- in BUILD
+                assert.is_nil(s.hero)
+                assert.are.equal(state.PHASE_BUILD, s.phase)
+            end)
+        end)
+
+        describe("hero_path", function()
+            it("returns nil when there is no hero", function()
+                local s = state.new(7)
+                assert.is_nil(state.hero_path(s))
+            end)
+
+            it("returns a path of Manhattan length on an empty room", function()
+                local s = state.new(7)
+                state.advance(s) -- spawn at entrance
+                local path = state.hero_path(s)
+                assert.is_not_nil(path)
+                assert.are.equal(
+                    grid.manhattan(s.hero.x, s.hero.y,
+                        s.dungeon.treasure.x, s.dungeon.treasure.y),
+                    #path)
+            end)
         end)
     end)
 end)
