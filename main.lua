@@ -7,6 +7,7 @@ local input       = require("src.input")
 local ui          = require("src.ui")
 local palette     = require("src.palette")
 local sprite_base = require("src.gen.sprite_base")
+local assets      = require("src.assets")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
@@ -22,6 +23,8 @@ function love.load()
     love.graphics.setBackgroundColor(BG_R, BG_G, BG_B)
     love.graphics.setDefaultFilter("nearest", "nearest")
     love.keyboard.setKeyRepeat(false)
+
+    assets.load()
 
     math.randomseed(os.time())
     game = state.new(rand_seed())

@@ -7,56 +7,41 @@ local dungeon = require("src.dungeon")
 local monster = require("src.monster")
 local hero    = require("src.hero")
 local state   = require("src.state")
+local assets  = require("src.assets")
 
 local M = {}
 
--- Palette tuned against the #1a1a2e background.
-local COLOR_FLOOR_FILL  = { 0.13, 0.13, 0.22 }
-local COLOR_FLOOR_LINE  = { 0.22, 0.22, 0.34 }
-local COLOR_WALL_FILL   = { 0.20, 0.20, 0.34 }
-local COLOR_WALL_LINE   = { 0.32, 0.32, 0.46 }
-local COLOR_ENTRANCE    = { 0.40, 0.85, 1.00 }
-local COLOR_TREASURE    = { 1.00, 0.84, 0.20 }
 local COLOR_CURSOR_OK   = { 0.40, 1.00, 0.50, 0.30 }
 local COLOR_CURSOR_BAD  = { 1.00, 0.40, 0.40, 0.30 }
 local COLOR_HERO_BORDER = { 1.00, 1.00, 1.00 }
 local COLOR_PATH_DOT    = { 1.00, 1.00, 1.00, 0.20 }
 
 function M.draw_dungeon(d)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    local floor_imgs = assets.tiles.floor
+    local wall_imgs  = assets.tiles.wall
+    local n_floor    = #floor_imgs
+    local n_wall     = #wall_imgs
+
     for ty = 1, grid.HEIGHT do
         for tx = 1, grid.WIDTH do
             local px, py = grid.tile_to_pixel(tx, ty)
-            local is_wall = (d.grid[ty][tx] == dungeon.WALL)
+            local img
 
-            love.graphics.setColor(is_wall and COLOR_WALL_FILL or COLOR_FLOOR_FILL)
-            love.graphics.rectangle("fill", px, py, grid.TILE, grid.TILE)
+            if tx == d.entrance.x and ty == d.entrance.y then
+                img = assets.tiles.door
+            elseif tx == d.treasure.x and ty == d.treasure.y then
+                img = assets.tiles.treasure
+            elseif d.grid[ty][tx] == dungeon.WALL then
+                img = wall_imgs[assets.tile_variation(tx, ty, n_wall)]
+            else
+                img = floor_imgs[assets.tile_variation(tx, ty, n_floor)]
+            end
 
-            love.graphics.setColor(is_wall and COLOR_WALL_LINE or COLOR_FLOOR_LINE)
-            love.graphics.rectangle("line", px, py, grid.TILE, grid.TILE)
+            love.graphics.draw(img, px, py)
         end
     end
-
-    do
-        local px, py = grid.tile_to_pixel(d.entrance.x, d.entrance.y)
-        love.graphics.setColor(COLOR_ENTRANCE)
-        love.graphics.circle("line",
-            px + grid.TILE / 2, py + grid.TILE / 2,
-            grid.TILE * 0.35)
-    end
-
-    do
-        local px, py = grid.tile_to_pixel(d.treasure.x, d.treasure.y)
-        local cx, cy = px + grid.TILE / 2, py + grid.TILE / 2
-        local r = grid.TILE * 0.4
-        love.graphics.setColor(COLOR_TREASURE)
-        love.graphics.polygon("fill",
-            cx, cy - r,
-            cx + r, cy,
-            cx, cy + r,
-            cx - r, cy)
-    end
-
-    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function M.draw_monsters(monsters)
