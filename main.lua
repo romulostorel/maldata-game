@@ -24,7 +24,7 @@ function love.load()
 end
 
 function love.update(dt)
-    -- Logic update hook. Future: state:update(dt) for animation timers, etc.
+    state.update(game, dt)
 end
 
 function love.draw()
@@ -42,23 +42,26 @@ end
 function love.keypressed(key)
     if key == "escape" then
         love.event.quit()
-    elseif key == "space" then
-        if game.phase == state.PHASE_INVASION then
-            state.step_invasion(game)
-        else
-            state.advance(game)
-        end
     elseif key == "r" then
         state.reset(game, rand_seed())
+    elseif game.phase == state.PHASE_INVASION then
+        if key == "space" then
+            state.toggle_auto_step(game)
+        elseif key == "." or key == "right" then
+            state.step_invasion(game)
+        end
     else
-        input.handle_key(game, key)
+        if key == "space" then
+            state.advance(game)
+        else
+            input.handle_key(game, key)
+        end
     end
 end
 
 function love.mousepressed(x, y, button)
     if button ~= 1 then return end
 
-    -- During RESULT, the only valid click is the restart button.
     if game.phase == state.PHASE_RESULT then
         if ui.is_restart_clicked(x, y) then
             state.reset(game, rand_seed())

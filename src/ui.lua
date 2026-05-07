@@ -6,7 +6,6 @@ local state = require("src.state")
 
 local M = {}
 
--- HP bar geometry, drawn inside the tile against its bottom edge.
 local BAR_W        = grid.TILE * 0.7
 local BAR_H        = 3
 local BAR_OFFSET_Y = grid.TILE - BAR_H - 2
@@ -31,8 +30,6 @@ local function draw_bar(entity, color)
 end
 
 function M.draw_hp_bars(game)
-    -- HP only matters once the invasion is under way; hide bars during build
-    -- to avoid drawing meaningless full bars on every freshly placed monster.
     if game.phase == state.PHASE_BUILD then return end
 
     for _, m in ipairs(game.monsters) do
@@ -59,15 +56,22 @@ function M.draw_hud(game)
             8, 24)
     elseif game.phase == state.PHASE_INVASION and game.hero then
         love.graphics.print(
-            ("hero: %s    HP %d/%d    ATK %d    range %d")
+            ("hero: %s    HP %d/%d    ATK %d    range %d    %s")
                 :format(game.hero.class, game.hero.hp, game.hero.max_hp,
-                    game.hero.atk, game.hero.range),
+                    game.hero.atk, game.hero.range,
+                    game.auto_step and "[AUTO]" or "[PAUSED]"),
             8, 24)
     end
 
-    love.graphics.print(
-        "[SPACE] advance / step turn    [R] new run    [ESC] quit",
-        8, 40)
+    local hotkeys
+    if game.phase == state.PHASE_BUILD then
+        hotkeys = "[CLICK] place    [SPACE] start invasion    [R] new dungeon    [ESC] quit"
+    elseif game.phase == state.PHASE_INVASION then
+        hotkeys = "[SPACE] pause/resume    [.] step    [R] new run    [ESC] quit"
+    else
+        hotkeys = "[SPACE] back to build    [R] new run    [ESC] quit"
+    end
+    love.graphics.print(hotkeys, 8, 40)
 end
 
 function M.draw_result(game)
@@ -97,7 +101,6 @@ function M.draw_result(game)
         (love.graphics.getWidth() - tw) / 2, 200,
         0, title_scale, title_scale)
 
-    -- Restart button (hover highlight).
     local mx, my = love.mouse.getPosition()
     local hovered = M.is_restart_clicked(mx, my)
 

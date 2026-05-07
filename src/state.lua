@@ -20,6 +20,10 @@ M.MAX_MONSTERS   = 3
 M.OUTCOME_TREASURE_STOLEN = "treasure_stolen"
 M.OUTCOME_HERO_DEAD       = "hero_dead"
 
+-- Auto-step cadence during invasion. Tweak here to change the default
+-- watch-the-run pacing.
+M.STEP_INTERVAL = 0.25
+
 local PHASE_ORDER = {
     M.PHASE_BUILD,
     M.PHASE_INVASION,
@@ -36,6 +40,8 @@ function M.new(seed)
         selected_monster_type = monster.GOBLIN,
         hero = nil,
         outcome = nil,
+        auto_step = true,
+        step_timer = 0,
     }
 end
 
@@ -53,6 +59,8 @@ function M.advance(state)
         state.hero = hero.new(state.rng,
             state.dungeon.entrance.x, state.dungeon.entrance.y)
         state.outcome = nil
+        state.auto_step = true
+        state.step_timer = 0
     elseif next_phase == M.PHASE_BUILD then
         state.hero = nil
         state.outcome = nil
@@ -70,6 +78,8 @@ function M.reset(state, seed)
     state.selected_monster_type = monster.GOBLIN
     state.hero = nil
     state.outcome = nil
+    state.auto_step = true
+    state.step_timer = 0
 end
 
 local function tile_is_free(state, x, y)
@@ -117,8 +127,6 @@ function M.hero_path(state)
         monster_blocker(state))
 end
 
--- Pick the first alive monster within hero range. First-found rather than
--- closest keeps the rule predictable; the player can plan around it.
 local function find_target_for_hero(state)
     for _, m in ipairs(state.monsters) do
         if m.alive and combat.in_range(state.hero, m) then
@@ -160,6 +168,35 @@ function M.step_invasion(state)
     if not state.hero.alive then
         state.phase = M.PHASE_RESULT
         state.outcome = M.OUTCOME_HERO_DEAD
+    end
+end
+
+function M.toggle_auto_step(state)
+    state.auto_step = not state.auto_step
+    -- Reset accumulator so the next resume waits a fresh interval, not
+    -- whatever sliver of dt was leftover when we paused.
+    state.step_timer = 0
+end
+
+-- Drives auto-stepping during invasion. Accumulates dt; once it crosses
+-- STEP_INTERVAL, runs step_invasion (possibly multiple times if dt is
+-- huge — frame hitch fast-forward). No-op outside invasion or while
+-- paused; bails out of the inner loop the instant phase leaves invasion
+-- so a kill/treasure transition can't be over-stepped.
+function M.update(state, dt)
+    if state.phase ~= M.PHASE_INVASION then return end
+    if not state.auto_step then return end
+    if not state.hero or not state.hero.alive then return end
+
+    state.step_timer = state.step_timer + dt
+    while state.step_timer >= M.STEP_INTERVAL do
+        state.step_timer = state.step_timer - M.STEP_INTERVAL
+        M.step_invasion(state)
+        if state.phase ~= M.PHASE_INVASION
+           or not state.hero or not state.hero.alive then
+            state.step_timer = 0
+            break
+        end
     end
 end
 
