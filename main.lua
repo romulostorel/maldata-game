@@ -25,10 +25,10 @@ local function rand_seed()
     return math.random(1, 2147483646)
 end
 
--- Combat → animation+effects bridge. state.lua emits these events; we
+-- Combat → animation+effects+audio bridge. state.lua emits these events; we
 -- stamp the entity with a timestamp the renderer reads to pick attack/death
--- frames, and we also spawn the matching one-shot visual effects (sparks,
--- scatter, damage number).
+-- frames, spawn matching one-shot visual effects (sparks, scatter, damage
+-- number), and route the matching SFX.
 local function on_combat_event(kind, attacker, target)
     local now = love.timer.getTime()
     if kind == "attack" then
@@ -36,9 +36,13 @@ local function on_combat_event(kind, attacker, target)
         local color = target.class and palette.blood or palette.paper
         effects.spawn_hit(target.x, target.y)
         effects.spawn_damage(target.x, target.y, attacker.atk, color)
+        if attacker.class then audio.play("hero_attack") end
+        audio.play("hit_impact")
     elseif kind == "death" then
         attacker._death_at = now  -- "attacker" arg holds the dying entity here
         effects.spawn_scatter(attacker.x, attacker.y)
+    elseif kind == "move" then
+        if attacker.class then audio.play("hero_footstep") end
     end
 end
 

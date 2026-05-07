@@ -22,6 +22,9 @@ local SFX = {
     ui_click         = { gen = sfx_gen.ui_click,         volume = 0.55 },
     phase_transition = { gen = sfx_gen.phase_transition, volume = 0.70 },
     monster_place    = { gen = sfx_gen.monster_place,    volume = 0.65 },
+    hero_footstep    = { gen = sfx_gen.hero_footstep,    volume = 0.20 },
+    hero_attack      = { gen = sfx_gen.hero_attack,      volume = 0.50 },
+    hit_impact       = { gen = sfx_gen.hit_impact,       volume = 0.55 },
 }
 
 local sources = {}

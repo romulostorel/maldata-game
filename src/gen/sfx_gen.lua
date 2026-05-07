@@ -69,4 +69,41 @@ function M.monster_place()
     return layer_head(body, 0.65, tick, 0.35)
 end
 
+-- 70ms footstep tap. Quiet by design — fires on every hero step. A short
+-- noise burst (the contact) layered on a low triangle (the foot weight).
+function M.hero_footstep()
+    local body = waveform.triangle(180, 0.07, SR)
+    envelope.adsr(body, SR, 0.005, 0.020, 0.30, 0.045)
+
+    local tap = waveform.noise(0, 0.040, SR, 4242)
+    envelope.adsr(tap, SR, 0.002, 0.010, 0.0, 0.028)
+
+    return layer_head(body, 0.5, tap, 0.5)
+end
+
+-- 200ms swoosh-style hero attack. Shaped noise reads as the swing arc;
+-- a brief mid triangle accent gives it tonal presence so it doesn't
+-- disappear into ambient noise once that exists.
+function M.hero_attack()
+    local swoosh = waveform.noise(0, 0.20, SR, 1357)
+    envelope.adsr(swoosh, SR, 0.008, 0.040, 0.30, 0.152)
+
+    local accent = waveform.triangle(440, 0.08, SR)
+    envelope.adsr(accent, SR, 0.002, 0.020, 0.50, 0.058)
+
+    return layer_head(swoosh, 0.55, accent, 0.45)
+end
+
+-- 150ms impact punch. Same transient+body recipe as monster_place but
+-- tighter and pitched a bit higher — reads as "ow" rather than "thud".
+function M.hit_impact()
+    local body = waveform.triangle(220, 0.15, SR)
+    envelope.adsr(body, SR, 0.001, 0.030, 0.50, 0.119)
+
+    local crack = waveform.noise(0, 0.020, SR, 9090)
+    envelope.adsr(crack, SR, 0.001, 0.005, 0.0, 0.014)
+
+    return layer_head(body, 0.55, crack, 0.45)
+end
+
 return M

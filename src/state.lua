@@ -152,9 +152,11 @@ end
 
 -- on_event is an optional callback used by the host (main.lua) to react to
 -- combat without coupling state.lua to LÖVE — e.g., kicking off the attack
--- flash and death silhouette anims. Signature:
+-- flash and death silhouette anims, and routing footstep/swing/impact SFX.
+-- Signatures:
 --   on_event("attack", attacker, target)
 --   on_event("death",  who)
+--   on_event("move",   who)            -- fired after a successful step
 function M.step_invasion(state, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
     if not state.hero or not state.hero.alive then return end
@@ -172,6 +174,7 @@ function M.step_invasion(state, on_event)
         if path and #path > 0 then
             state.hero.x = path[1].x
             state.hero.y = path[1].y
+            if on_event then on_event("move", state.hero) end
         end
         local goal = state.dungeon.treasure
         if state.hero.x == goal.x and state.hero.y == goal.y then
