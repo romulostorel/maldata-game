@@ -9,6 +9,7 @@ local palette     = require("src.palette")
 local sprite_base = require("src.gen.sprite_base")
 local anim_gen    = require("src.gen.anim_gen")
 local assets      = require("src.assets")
+local effects     = require("src.effects")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
@@ -21,14 +22,20 @@ local function rand_seed()
     return math.random(1, 2147483646)
 end
 
--- Combat → animation bridge. state.lua emits these events; we stamp the
--- entity with a timestamp the renderer reads to pick attack/death frames.
-local function on_combat_event(kind, who, _target)
+-- Combat → animation+effects bridge. state.lua emits these events; we
+-- stamp the entity with a timestamp the renderer reads to pick attack/death
+-- frames, and we also spawn the matching one-shot visual effects (sparks,
+-- scatter, damage number).
+local function on_combat_event(kind, attacker, target)
     local now = love.timer.getTime()
     if kind == "attack" then
-        who._attack_at = now
+        attacker._attack_at = now
+        local color = target.class and palette.blood or palette.paper
+        effects.spawn_hit(target.x, target.y)
+        effects.spawn_damage(target.x, target.y, attacker.atk, color)
     elseif kind == "death" then
-        who._death_at = now
+        attacker._death_at = now  -- "attacker" arg holds the dying entity here
+        effects.spawn_scatter(attacker.x, attacker.y)
     end
 end
 
@@ -45,6 +52,7 @@ end
 
 function love.update(dt)
     state.update(game, dt, on_combat_event)
+    effects.update(dt)
 end
 
 function love.draw()
@@ -53,6 +61,8 @@ function love.draw()
     render.draw_path(game)
     render.draw_hero(game.hero)
     render.draw_build_cursor(game)
+
+    effects.draw()
 
     ui.draw_hp_bars(game)
     ui.draw_hud(game)
@@ -74,6 +84,7 @@ function love.keypressed(key)
         show_entities = not show_entities
     elseif key == "r" then
         state.reset(game, rand_seed())
+        effects.clear()
     elseif game.phase == state.PHASE_INVASION then
         if key == "space" then
             state.toggle_auto_step(game)
@@ -95,6 +106,7 @@ function love.mousepressed(x, y, button)
     if game.phase == state.PHASE_RESULT then
         if ui.is_restart_clicked(x, y) then
             state.reset(game, rand_seed())
+            effects.clear()
         end
         return
     end
