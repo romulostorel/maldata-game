@@ -11,6 +11,10 @@
 -- overlap (LÖVE keeps a Source alive while it plays even when no Lua
 -- reference holds it). It's a safe no-op when load() hasn't run — busted
 -- tests can require this module without booting LÖVE's audio backend.
+--
+-- Ambient drones (long, looped, only one playing at a time) live in a
+-- separate registry and are switched via audio.set_ambient(name) — pass
+-- nil to silence whatever's currently playing.
 
 local sfx_gen  = require("src.gen.sfx_gen")
 local waveform = require("src.gen.waveform")
@@ -42,9 +46,17 @@ local SFX = {
     defeat_sting           = { gen = sfx_gen.defeat_sting,           volume = 0.65 },
 }
 
+-- Long looped pads, one playing at a time, switched by set_ambient.
+local AMBIENTS = {
+    ambient_build    = { gen = sfx_gen.ambient_build,    volume = 0.30 },
+    ambient_invasion = { gen = sfx_gen.ambient_invasion, volume = 0.32 },
+}
+
 -- Each entry in `sources` is an array of one or more Sources, even for
 -- single-variant SFX, so play() doesn't need to branch on shape.
-local sources = {}
+local sources         = {}
+local ambients        = {}
+local current_ambient = nil
 
 -- Prime spacing keeps successive seeds far apart in the LCG state space,
 -- so variants come out with audibly different noise textures.
@@ -63,6 +75,14 @@ function M.load()
         end
         sources[name] = list
     end
+
+    for name, def in pairs(AMBIENTS) do
+        local samples = def.gen()
+        local src = waveform.to_source(samples, waveform.SAMPLE_RATE)
+        src:setVolume(def.volume)
+        src:setLooping(true)
+        ambients[name] = src
+    end
 end
 
 function M.play(name)
@@ -70,6 +90,22 @@ function M.play(name)
     if not list then return end
     local pick = list[math.random(1, #list)]
     pick:clone():play()
+end
+
+-- Switch the looped ambient drone. Pass nil to silence the current one
+-- (used during the result screen so the sting plays uncluttered). Calling
+-- set_ambient with the name that's already playing is a no-op so the
+-- drone doesn't restart on every tick.
+function M.set_ambient(name)
+    local target = name and ambients[name] or nil
+    if target == current_ambient then return end
+    if current_ambient then
+        current_ambient:stop()
+    end
+    current_ambient = target
+    if target then
+        target:play()
+    end
 end
 
 return M

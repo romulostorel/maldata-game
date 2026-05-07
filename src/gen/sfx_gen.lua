@@ -256,4 +256,44 @@ function M.defeat_sting()
     return concat(concat(concat(n1, n2), n3), n4)
 end
 
+-- ---------------------------------------------------------------------------
+-- Ambient drones (looped). 8s buffers chosen so 80Hz/120Hz/113Hz partials
+-- complete an integer number of cycles (640/960/904) — the buffer wraps
+-- without a click. A slow sine LFO modulates amplitude over the loop so
+-- the drone breathes instead of staying static.
+-- ---------------------------------------------------------------------------
+
+local AMBIENT_DUR = 8.0
+
+-- Calm tactical pad for the build phase: fundamental + perfect fifth on
+-- triangle, gentle 0.125Hz LFO breath (one cycle per loop). Peak amplitude
+-- ≈ 0.6, well clear of clipping.
+function M.ambient_build()
+    local fund  = waveform.triangle(80, AMBIENT_DUR, SR)
+    local fifth = waveform.triangle(120, AMBIENT_DUR, SR)
+    local lfo   = waveform.sine(0.125, AMBIENT_DUR, SR)
+    for i = 1, #fund do
+        local mix = fund[i] * 0.40 + fifth[i] * 0.30
+        local amp = 0.70 + 0.15 * lfo[i]
+        fund[i] = mix * amp
+    end
+    return fund
+end
+
+-- Tense pad for invasion: same fundamental + a tritone (113Hz, ≈ √2·80)
+-- — the dissonance is what makes it dread instead of calm. Faster LFO
+-- (0.25Hz, two breaths per loop) and deeper amplitude swing keep the
+-- drone unstable.
+function M.ambient_invasion()
+    local fund = waveform.triangle(80, AMBIENT_DUR, SR)
+    local diss = waveform.triangle(113, AMBIENT_DUR, SR)
+    local lfo  = waveform.sine(0.25, AMBIENT_DUR, SR)
+    for i = 1, #fund do
+        local mix = fund[i] * 0.35 + diss[i] * 0.30
+        local amp = 0.55 + 0.25 * lfo[i]
+        fund[i] = mix * amp
+    end
+    return fund
+end
+
 return M

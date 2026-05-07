@@ -55,16 +55,20 @@ local function index_of(phase)
     end
 end
 
+local PHASE_AMBIENT = {
+    [M.PHASE_BUILD]    = "ambient_build",
+    [M.PHASE_INVASION] = "ambient_invasion",
+    -- result: nil → drone silenced so the sting plays uncluttered
+}
+
 -- Single chokepoint for phase changes. Plays the generic phase_transition
 -- stinger on every real change, except when entering RESULT — there the
 -- outcome-specific sting (victory if the hero died, defeat if the treasure
 -- was stolen) replaces it. state.outcome must already be set before
--- transitioning to RESULT for the right sting to fire.
+-- transitioning to RESULT for the right sting to fire. Also swaps the
+-- looping ambient drone to match the destination phase.
 local function set_phase(state, new_phase)
-    if state.phase == new_phase then
-        state.phase = new_phase
-        return
-    end
+    if state.phase == new_phase then return end
     if new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_HERO_DEAD then
         audio.play("victory_sting")
     elseif new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_TREASURE_STOLEN then
@@ -72,6 +76,7 @@ local function set_phase(state, new_phase)
     else
         audio.play("phase_transition")
     end
+    audio.set_ambient(PHASE_AMBIENT[new_phase])
     state.phase = new_phase
 end
 

@@ -65,6 +65,9 @@ function love.load()
 
     math.randomseed(os.time())
     game = state.new(rand_seed())
+    -- M.new doesn't go through set_phase, so prime the build drone manually
+    -- on first boot. Subsequent transitions are driven by set_phase.
+    audio.set_ambient("ambient_build")
 end
 
 function love.update(dt)
