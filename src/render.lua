@@ -4,17 +4,18 @@
 
 local grid    = require("src.grid")
 local dungeon = require("src.dungeon")
-local monster = require("src.monster")
-local hero    = require("src.hero")
 local state   = require("src.state")
 local assets  = require("src.assets")
 
 local M = {}
 
-local COLOR_CURSOR_OK   = { 0.40, 1.00, 0.50, 0.30 }
-local COLOR_CURSOR_BAD  = { 1.00, 0.40, 0.40, 0.30 }
-local COLOR_HERO_BORDER = { 1.00, 1.00, 1.00 }
-local COLOR_PATH_DOT    = { 1.00, 1.00, 1.00, 0.20 }
+local COLOR_CURSOR_OK  = { 0.40, 1.00, 0.50, 0.30 }
+local COLOR_CURSOR_BAD = { 1.00, 0.40, 0.40, 0.30 }
+local COLOR_PATH_DOT   = { 1.00, 1.00, 1.00, 0.20 }
+
+-- 24×24 entity sprites are blitted with a 4-px inset so they sit centered
+-- inside their 32×32 tile.
+local SPRITE_INSET = (grid.TILE - 24) / 2
 
 function M.draw_dungeon(d)
     love.graphics.setColor(1, 1, 1, 1)
@@ -45,16 +46,14 @@ function M.draw_dungeon(d)
 end
 
 function M.draw_monsters(monsters)
+    love.graphics.setColor(1, 1, 1, 1)
     for _, m in ipairs(monsters) do
         if m.alive then
             local px, py = grid.tile_to_pixel(m.x, m.y)
-            love.graphics.setColor(monster.TYPES[m.type].color)
-            love.graphics.circle("fill",
-                px + grid.TILE / 2, py + grid.TILE / 2,
-                grid.TILE * 0.35)
+            love.graphics.draw(assets.entity[m.type],
+                px + SPRITE_INSET, py + SPRITE_INSET)
         end
     end
-    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function M.draw_path(game)
@@ -74,16 +73,9 @@ end
 function M.draw_hero(h)
     if not h or not h.alive then return end
     local px, py = grid.tile_to_pixel(h.x, h.y)
-    local cx, cy = px + grid.TILE / 2, py + grid.TILE / 2
-    local r = grid.TILE * 0.40
-
-    love.graphics.setColor(hero.CLASSES[h.class].color)
-    love.graphics.circle("fill", cx, cy, r)
-
-    love.graphics.setColor(COLOR_HERO_BORDER)
-    love.graphics.setLineWidth(2)
-    love.graphics.circle("line", cx, cy, r)
-    love.graphics.setLineWidth(1)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(assets.entity[h.class],
+        px + SPRITE_INSET, py + SPRITE_INSET)
 end
 
 function M.draw_build_cursor(game)

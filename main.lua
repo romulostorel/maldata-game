@@ -7,6 +7,7 @@ local input       = require("src.input")
 local ui          = require("src.ui")
 local palette     = require("src.palette")
 local sprite_base = require("src.gen.sprite_base")
+local entity_gen  = require("src.gen.entity_gen")
 local assets      = require("src.assets")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
@@ -14,6 +15,7 @@ local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 local game
 local show_palette     = false
 local show_sprite_base = false
+local show_entities    = false
 
 local function rand_seed()
     return math.random(1, 2147483646)
@@ -47,6 +49,7 @@ function love.draw()
 
     if show_palette then palette.draw_debug() end
     if show_sprite_base then sprite_base.draw_debug() end
+    if show_entities then entity_gen.draw_debug() end
 end
 
 function love.keypressed(key)
@@ -56,6 +59,8 @@ function love.keypressed(key)
         show_palette = not show_palette
     elseif key == "f2" then
         show_sprite_base = not show_sprite_base
+    elseif key == "f3" then
+        show_entities = not show_entities
     elseif key == "r" then
         state.reset(game, rand_seed())
     elseif game.phase == state.PHASE_INVASION then
