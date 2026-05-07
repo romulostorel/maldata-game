@@ -5,8 +5,8 @@ local dungeon = require("src.dungeon")
 local monster = require("src.monster")
 local grid = require("src.grid")
 
--- Returns the first n interior tiles (2..W-1, 2..H-1) that aren't the
--- treasure for the given state. Stable per-seed so tests are deterministic.
+-- First n interior tiles (2..W-1, 2..H-1) that aren't the treasure for the
+-- given state. Stable per-seed so tests are deterministic.
 local function free_tiles(s, n)
     local tiles = {}
     for y = 2, grid.HEIGHT - 1 do
@@ -18,6 +18,29 @@ local function free_tiles(s, n)
         end
     end
     return tiles
+end
+
+-- Find the first floor neighbor of (hx, hy). Combined with state.advance(),
+-- this lets combat tests place a monster directly adjacent to the hero
+-- regardless of where the seed put the entrance.
+local function first_floor_neighbor(s, hx, hy)
+    local dirs = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
+    for _, d in ipairs(dirs) do
+        local nx, ny = hx + d[1], hy + d[2]
+        if s.dungeon.grid[ny] and s.dungeon.grid[ny][nx] == dungeon.FLOOR
+           and not (nx == s.dungeon.entrance.x and ny == s.dungeon.entrance.y)
+           and not (nx == s.dungeon.treasure.x and ny == s.dungeon.treasure.y) then
+            return nx, ny
+        end
+    end
+end
+
+-- Direct injection bypasses placement rules — needed for combat tests that
+-- want a specific monster on a specific tile.
+local function inject_monster(s, type_key, x, y)
+    local m = monster.new(type_key, x, y)
+    table.insert(s.monsters, m)
+    return m
 end
 
 describe("state", function()
@@ -203,31 +226,28 @@ describe("state", function()
 
         it("clears the hero on advance back to build", function()
             local s = state.new(7)
-            state.advance(s) -- INVASION
-            state.advance(s) -- RESULT (hero retained for the result screen)
+            state.advance(s)
+            state.advance(s)
             assert.is_not_nil(s.hero)
-            state.advance(s) -- BUILD
+            state.advance(s)
             assert.is_nil(s.hero)
         end)
 
         it("re-spawns a fresh hero on a second invasion", function()
             local s = state.new(7)
-            state.advance(s) -- spawn 1
+            state.advance(s)
             local first = s.hero
-            state.advance(s); state.advance(s) -- result -> build (clears hero)
-            state.advance(s) -- spawn 2
+            state.advance(s); state.advance(s)
+            state.advance(s)
             assert.is_not_nil(s.hero)
-            -- Same seed and the rng has advanced, so stats may differ; but the
-            -- hero must be back at the entrance with full HP.
             assert.are.equal(s.dungeon.entrance.x, s.hero.x)
             assert.are.equal(s.dungeon.entrance.y, s.hero.y)
             assert.are.equal(s.hero.max_hp, s.hero.hp)
-            -- Same table identity must NOT be reused (fresh entity).
             assert.are_not.equal(first, s.hero)
         end)
 
-        describe("step_invasion", function()
-            it("moves the hero one tile closer to the treasure", function()
+        describe("step_invasion (movement)", function()
+            it("moves the hero one tile closer to the treasure when no monster is in range", function()
                 local s = state.new(7)
                 state.advance(s)
                 local d_before = grid.manhattan(
@@ -255,9 +275,98 @@ describe("state", function()
 
             it("no-ops outside the INVASION phase", function()
                 local s = state.new(7)
-                state.step_invasion(s) -- in BUILD
+                state.step_invasion(s)
                 assert.is_nil(s.hero)
                 assert.are.equal(state.PHASE_BUILD, s.phase)
+            end)
+        end)
+
+        describe("step_invasion (combat)", function()
+            it("hero attacks an adjacent monster instead of moving", function()
+                local s = state.new(7)
+                state.advance(s)
+                local hx, hy = s.hero.x, s.hero.y
+                local mx, my = first_floor_neighbor(s, hx, hy)
+                local m = inject_monster(s, monster.GOBLIN, mx, my)
+                local m_hp_before = m.hp
+
+                state.step_invasion(s)
+
+                assert.are.equal(hx, s.hero.x)
+                assert.are.equal(hy, s.hero.y)
+                assert.are.equal(m_hp_before - s.hero.atk, m.hp)
+            end)
+
+            it("monster in range attacks the hero on the same turn", function()
+                local s = state.new(7)
+                state.advance(s)
+                local mx, my = first_floor_neighbor(s, s.hero.x, s.hero.y)
+                inject_monster(s, monster.ORC, mx, my)
+                local hp_before = s.hero.hp
+
+                state.step_invasion(s)
+
+                assert.is_true(s.hero.hp < hp_before)
+            end)
+
+            it("hero death transitions to RESULT with hero_dead", function()
+                local s = state.new(7)
+                state.advance(s)
+                s.hero.hp = 1
+                local mx, my = first_floor_neighbor(s, s.hero.x, s.hero.y)
+                -- Orc atk=4 will down a 1-hp hero even after the hero hits back.
+                inject_monster(s, monster.ORC, mx, my)
+
+                state.step_invasion(s)
+
+                assert.are.equal(state.PHASE_RESULT, s.phase)
+                assert.are.equal(state.OUTCOME_HERO_DEAD, s.outcome)
+                assert.is_false(s.hero.alive)
+            end)
+
+            it("once a monster dies, hero proceeds to move on the following turn", function()
+                local s = state.new(7)
+                state.advance(s)
+                local hx, hy = s.hero.x, s.hero.y
+                local mx, my = first_floor_neighbor(s, hx, hy)
+                local m = inject_monster(s, monster.GOBLIN, mx, my)
+                m.hp = 1 -- hero one-shots the goblin
+
+                state.step_invasion(s) -- hero kills the goblin
+                assert.is_false(m.alive)
+                -- hero stayed put and survived (dead monster cannot strike back)
+                assert.are.equal(hx, s.hero.x)
+                assert.are.equal(hy, s.hero.y)
+                assert.is_true(s.hero.alive)
+
+                state.step_invasion(s) -- now hero should advance
+                assert.is_true(s.hero.x ~= hx or s.hero.y ~= hy)
+            end)
+
+            it("ranged hero stays out of melee monster range", function()
+                local s = state.new(7)
+                state.advance(s)
+                -- Force an archer (range 3) regardless of seed roll.
+                s.hero.range = 3
+                s.hero.atk = 1 -- avoid one-shotting and hide the test behind random rolls
+                local hx, hy = s.hero.x, s.hero.y
+                -- Place a goblin (range 1) two tiles away on a floor tile.
+                local target_x, target_y
+                if first_floor_neighbor(s, hx, hy) then
+                    local nx, ny = first_floor_neighbor(s, hx, hy)
+                    -- step one further in the same direction
+                    local dx, dy = nx - hx, ny - hy
+                    target_x, target_y = nx + dx, ny + dy
+                end
+                if target_x and s.dungeon.grid[target_y]
+                   and s.dungeon.grid[target_y][target_x] == dungeon.FLOOR then
+                    local m = inject_monster(s, monster.GOBLIN, target_x, target_y)
+                    local hp_before = s.hero.hp
+                    state.step_invasion(s)
+                    -- hero attacked the goblin but goblin (range 1, 2 tiles away) cannot retaliate.
+                    assert.is_true(m.hp < m.max_hp)
+                    assert.are.equal(hp_before, s.hero.hp)
+                end
             end)
         end)
 
@@ -269,7 +378,7 @@ describe("state", function()
 
             it("returns a path of Manhattan length on an empty room", function()
                 local s = state.new(7)
-                state.advance(s) -- spawn at entrance
+                state.advance(s)
                 local path = state.hero_path(s)
                 assert.is_not_nil(path)
                 assert.are.equal(

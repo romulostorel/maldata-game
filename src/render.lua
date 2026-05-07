@@ -61,16 +61,17 @@ end
 
 function M.draw_monsters(monsters)
     for _, m in ipairs(monsters) do
-        local px, py = grid.tile_to_pixel(m.x, m.y)
-        love.graphics.setColor(monster.TYPES[m.type].color)
-        love.graphics.circle("fill",
-            px + grid.TILE / 2, py + grid.TILE / 2,
-            grid.TILE * 0.35)
+        if m.alive then
+            local px, py = grid.tile_to_pixel(m.x, m.y)
+            love.graphics.setColor(monster.TYPES[m.type].color)
+            love.graphics.circle("fill",
+                px + grid.TILE / 2, py + grid.TILE / 2,
+                grid.TILE * 0.35)
+        end
     end
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Faint white dots tracing the A* path from hero to treasure.
 function M.draw_path(game)
     if game.phase ~= state.PHASE_INVASION then return end
     local path = state.hero_path(game)
@@ -85,8 +86,6 @@ function M.draw_path(game)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Filled circle in the class color with a white border to distinguish
--- the hero from monsters at a glance.
 function M.draw_hero(h)
     if not h or not h.alive then return end
     local px, py = grid.tile_to_pixel(h.x, h.y)
@@ -102,8 +101,6 @@ function M.draw_hero(h)
     love.graphics.setLineWidth(1)
 end
 
--- Translucent overlay on the tile under the mouse, green when placement
--- would succeed and red when it would be rejected. Build phase only.
 function M.draw_build_cursor(game)
     if game.phase ~= state.PHASE_BUILD then return end
     local mx, my = love.mouse.getPosition()

@@ -8,6 +8,7 @@ local monster = require("src.monster")
 local hero    = require("src.hero")
 local ai      = require("src.ai")
 local rand    = require("src.rand")
+local combat  = require("src.combat")
 
 local M = {}
 
@@ -17,7 +18,7 @@ M.PHASE_RESULT   = "result"
 M.MAX_MONSTERS   = 3
 
 M.OUTCOME_TREASURE_STOLEN = "treasure_stolen"
--- Stage 7 will add OUTCOME_HERO_DEAD.
+M.OUTCOME_HERO_DEAD       = "hero_dead"
 
 local PHASE_ORDER = {
     M.PHASE_BUILD,
@@ -53,8 +54,6 @@ function M.advance(state)
             state.dungeon.entrance.x, state.dungeon.entrance.y)
         state.outcome = nil
     elseif next_phase == M.PHASE_BUILD then
-        -- Hero only exists during invasion + the result it produced;
-        -- a fresh build starts clean.
         state.hero = nil
         state.outcome = nil
     end
@@ -110,9 +109,6 @@ local function monster_blocker(state)
     end
 end
 
--- Recompute the path each call so monster movement and combat (Stage 7)
--- are reflected. Returns nil when the hero is gone or the goal is
--- unreachable.
 function M.hero_path(state)
     if not state.hero or not state.hero.alive then return nil end
     local goal = state.dungeon.treasure
@@ -121,21 +117,49 @@ function M.hero_path(state)
         monster_blocker(state))
 end
 
+-- Pick the first alive monster within hero range. First-found rather than
+-- closest keeps the rule predictable; the player can plan around it.
+local function find_target_for_hero(state)
+    for _, m in ipairs(state.monsters) do
+        if m.alive and combat.in_range(state.hero, m) then
+            return m
+        end
+    end
+    return nil
+end
+
 function M.step_invasion(state)
     if state.phase ~= M.PHASE_INVASION then return end
     if not state.hero or not state.hero.alive then return end
 
-    local path = M.hero_path(state)
-    if not path or #path == 0 then return end -- already on goal or unreachable
+    -- Hero turn: attack a monster in range, otherwise step along the path.
+    local target = find_target_for_hero(state)
+    if target then
+        combat.attack(state.hero, target)
+    else
+        local path = M.hero_path(state)
+        if path and #path > 0 then
+            state.hero.x = path[1].x
+            state.hero.y = path[1].y
+        end
+        local goal = state.dungeon.treasure
+        if state.hero.x == goal.x and state.hero.y == goal.y then
+            state.phase = M.PHASE_RESULT
+            state.outcome = M.OUTCOME_TREASURE_STOLEN
+            return
+        end
+    end
 
-    local next_tile = path[1]
-    state.hero.x = next_tile.x
-    state.hero.y = next_tile.y
+    -- Monster turn: every alive monster in range of the hero attacks back.
+    for _, m in ipairs(state.monsters) do
+        if m.alive and state.hero.alive and combat.in_range(m, state.hero) then
+            combat.attack(m, state.hero)
+        end
+    end
 
-    local goal = state.dungeon.treasure
-    if state.hero.x == goal.x and state.hero.y == goal.y then
+    if not state.hero.alive then
         state.phase = M.PHASE_RESULT
-        state.outcome = M.OUTCOME_TREASURE_STOLEN
+        state.outcome = M.OUTCOME_HERO_DEAD
     end
 end
 
