@@ -198,15 +198,50 @@ describe("state", function()
             assert.are.equal(1, #s.monsters)
         end)
 
-        it("caps placement at MAX_MONSTERS", function()
+        it("caps placement at the budget", function()
+            -- Goblin costs 2, BUDGET 10 — exactly 5 fit, the 6th must fail.
             local s = state.new(7)
-            local tiles = free_tiles(s, state.MAX_MONSTERS + 1)
-            for i = 1, state.MAX_MONSTERS do
+            local goblin_cost = monster.TYPES[monster.GOBLIN].cost
+            local max_goblins = math.floor(state.BUDGET / goblin_cost)
+            local tiles = free_tiles(s, max_goblins + 1)
+            for i = 1, max_goblins do
                 assert.is_true(state.try_place_monster(s, tiles[i].x, tiles[i].y))
             end
-            local extra = tiles[state.MAX_MONSTERS + 1]
+            local extra = tiles[max_goblins + 1]
             assert.is_false(state.try_place_monster(s, extra.x, extra.y))
-            assert.are.equal(state.MAX_MONSTERS, #s.monsters)
+            assert.are.equal(max_goblins, #s.monsters)
+        end)
+
+        it("rejects placement when the selected type would exceed remaining budget", function()
+            -- 4 goblins = 8/10. Selecting an Orc (cost 4) would push to 12.
+            local s = state.new(7)
+            local tiles = free_tiles(s, 5)
+            for i = 1, 4 do
+                assert.is_true(state.try_place_monster(s, tiles[i].x, tiles[i].y))
+            end
+            assert.are.equal(2, state.remaining_budget(s))
+            state.select_monster_type(s, monster.ORC)
+            assert.is_false(state.try_place_monster(s,
+                tiles[5].x, tiles[5].y))
+            -- Same tile is still legal for a Slime (cost 3 — but we only
+            -- have 2 left, so still rejected) but a Goblin (cost 2) fits.
+            state.select_monster_type(s, monster.SLIME)
+            assert.is_false(state.try_place_monster(s,
+                tiles[5].x, tiles[5].y))
+            state.select_monster_type(s, monster.GOBLIN)
+            assert.is_true(state.try_place_monster(s,
+                tiles[5].x, tiles[5].y))
+            assert.are.equal(0, state.remaining_budget(s))
+        end)
+
+        it("frees budget when a monster is removed", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.select_monster_type(s, monster.ORC)
+            state.try_place_monster(s, t.x, t.y)
+            assert.are.equal(state.BUDGET - 4, state.remaining_budget(s))
+            state.try_remove_monster(s, t.x, t.y)
+            assert.are.equal(state.BUDGET, state.remaining_budget(s))
         end)
 
         it("rejects placement outside the BUILD phase", function()

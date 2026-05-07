@@ -7,12 +7,14 @@ M.GOBLIN = "goblin"
 M.ORC    = "orc"
 M.SLIME  = "slime"
 
--- Stats locked per the v1 design sheet. Colors picked to be distinct
--- from the dungeon palette (entrance cyan, treasure gold).
+-- Stats locked per the v1 design sheet. `cost` feeds the build budget
+-- (state.BUDGET); it's the only knob that lets the player trade quantity
+-- against quality. Colors picked to be distinct from the dungeon palette
+-- (entrance cyan, treasure gold).
 M.TYPES = {
-    [M.GOBLIN] = { hp = 5,  atk = 2, range = 1, color = { 0.40, 0.85, 0.30 } },
-    [M.ORC]    = { hp = 10, atk = 4, range = 1, color = { 0.85, 0.30, 0.30 } },
-    [M.SLIME]  = { hp = 8,  atk = 3, range = 1, color = { 0.65, 0.40, 0.95 } },
+    [M.GOBLIN] = { hp = 5,  atk = 2, range = 1, cost = 2, color = { 0.40, 0.85, 0.30 } },
+    [M.ORC]    = { hp = 10, atk = 4, range = 1, cost = 4, color = { 0.85, 0.30, 0.30 } },
+    [M.SLIME]  = { hp = 8,  atk = 3, range = 1, cost = 3, color = { 0.65, 0.40, 0.95 } },
 }
 
 function M.new(type_key, x, y)
@@ -23,6 +25,7 @@ function M.new(type_key, x, y)
         hp = t.hp, max_hp = t.hp,
         atk = t.atk,
         range = t.range,
+        cost = t.cost,
         alive = true,
     }
 end

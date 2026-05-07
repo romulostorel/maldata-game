@@ -78,8 +78,8 @@ function M.draw_hud(game)
             and "wall"
             or game.selected_monster_type
         love.graphics.print(
-            ("[1] goblin   [2] orc   [3] slime   [4] wall    selected: %s    placed: %d/%d")
-                :format(sel, #game.monsters, state.MAX_MONSTERS),
+            ("[1] goblin (2)  [2] orc (4)  [3] slime (3)  [4] wall    selected: %s    budget: %d/%d")
+                :format(sel, state.spent_budget(game), state.BUDGET),
             8, 24)
     elseif game.phase == state.PHASE_INVASION and game.hero then
         love.graphics.setColor(palette.bone)

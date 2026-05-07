@@ -19,7 +19,11 @@ local M = {}
 M.PHASE_BUILD    = "build"
 M.PHASE_INVASION = "invasion"
 M.PHASE_RESULT   = "result"
-M.MAX_MONSTERS   = 3
+
+-- Build-phase economy. Each monster type has a cost in monster.TYPES; the
+-- player can spend up to BUDGET total. Replaces the old MAX_MONSTERS=3 cap
+-- so picking a Goblin (cost 2) vs an Orc (cost 4) is an actual decision.
+M.BUDGET = 10
 
 M.TOOL_MONSTER = "monster"
 M.TOOL_WALL    = "wall"
@@ -137,10 +141,23 @@ local function tile_is_free(state, x, y)
     return true
 end
 
+function M.spent_budget(state)
+    local sum = 0
+    for _, m in ipairs(state.monsters) do
+        sum = sum + m.cost
+    end
+    return sum
+end
+
+function M.remaining_budget(state)
+    return M.BUDGET - M.spent_budget(state)
+end
+
 function M.can_place_monster(state, x, y)
-    return state.phase == M.PHASE_BUILD
-        and #state.monsters < M.MAX_MONSTERS
-        and tile_is_free(state, x, y)
+    if state.phase ~= M.PHASE_BUILD then return false end
+    if not tile_is_free(state, x, y) then return false end
+    local cost = monster.TYPES[state.selected_monster_type].cost
+    return cost <= M.remaining_budget(state)
 end
 
 function M.try_place_monster(state, x, y)
