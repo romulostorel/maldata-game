@@ -21,6 +21,17 @@ local function rand_seed()
     return math.random(1, 2147483646)
 end
 
+-- Combat → animation bridge. state.lua emits these events; we stamp the
+-- entity with a timestamp the renderer reads to pick attack/death frames.
+local function on_combat_event(kind, who, _target)
+    local now = love.timer.getTime()
+    if kind == "attack" then
+        who._attack_at = now
+    elseif kind == "death" then
+        who._death_at = now
+    end
+end
+
 function love.load()
     love.graphics.setBackgroundColor(BG_R, BG_G, BG_B)
     love.graphics.setDefaultFilter("nearest", "nearest")
@@ -33,7 +44,7 @@ function love.load()
 end
 
 function love.update(dt)
-    state.update(game, dt)
+    state.update(game, dt, on_combat_event)
 end
 
 function love.draw()
@@ -67,7 +78,7 @@ function love.keypressed(key)
         if key == "space" then
             state.toggle_auto_step(game)
         elseif key == "." or key == "right" then
-            state.step_invasion(game)
+            state.step_invasion(game, on_combat_event)
         end
     else
         if key == "space" then

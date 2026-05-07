@@ -136,7 +136,12 @@ local function find_target_for_hero(state)
     return nil
 end
 
-function M.step_invasion(state)
+-- on_event is an optional callback used by the host (main.lua) to react to
+-- combat without coupling state.lua to LÖVE — e.g., kicking off the attack
+-- flash and death silhouette anims. Signature:
+--   on_event("attack", attacker, target)
+--   on_event("death",  who)
+function M.step_invasion(state, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
     if not state.hero or not state.hero.alive then return end
 
@@ -144,6 +149,10 @@ function M.step_invasion(state)
     local target = find_target_for_hero(state)
     if target then
         combat.attack(state.hero, target)
+        if on_event then
+            on_event("attack", state.hero, target)
+            if not target.alive then on_event("death", target) end
+        end
     else
         local path = M.hero_path(state)
         if path and #path > 0 then
@@ -162,6 +171,10 @@ function M.step_invasion(state)
     for _, m in ipairs(state.monsters) do
         if m.alive and state.hero.alive and combat.in_range(m, state.hero) then
             combat.attack(m, state.hero)
+            if on_event then
+                on_event("attack", m, state.hero)
+                if not state.hero.alive then on_event("death", state.hero) end
+            end
         end
     end
 
@@ -183,7 +196,7 @@ end
 -- huge — frame hitch fast-forward). No-op outside invasion or while
 -- paused; bails out of the inner loop the instant phase leaves invasion
 -- so a kill/treasure transition can't be over-stepped.
-function M.update(state, dt)
+function M.update(state, dt, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
     if not state.auto_step then return end
     if not state.hero or not state.hero.alive then return end
@@ -191,7 +204,7 @@ function M.update(state, dt)
     state.step_timer = state.step_timer + dt
     while state.step_timer >= M.STEP_INTERVAL do
         state.step_timer = state.step_timer - M.STEP_INTERVAL
-        M.step_invasion(state)
+        M.step_invasion(state, on_event)
         if state.phase ~= M.PHASE_INVASION
            or not state.hero or not state.hero.alive then
             state.step_timer = 0

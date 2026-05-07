@@ -88,6 +88,59 @@ function M.outline(c, color)
     end
 end
 
+-- Translate every opaque pixel by (dx, dy). Pixels falling outside the
+-- canvas are dropped. In-place; the source positions are cleared.
+function M.shift(c, dx, dy)
+    local snapshot = {}
+    for y = 1, c.h do
+        snapshot[y] = c.pixels[y]
+        c.pixels[y] = {}
+    end
+    for y = 1, c.h do
+        for x = 1, c.w do
+            local p = snapshot[y][x]
+            if p then
+                local nx, ny = x + dx, y + dy
+                if nx >= 1 and nx <= c.w and ny >= 1 and ny <= c.h then
+                    c.pixels[ny][nx] = p
+                end
+            end
+        end
+    end
+end
+
+-- Mix every opaque pixel toward `target` by amount `t` ∈ [0,1]. Pixels equal
+-- (by reference) to `keep` are skipped — used to preserve the outline color
+-- when filtering bodies.
+function M.tint_filter(c, target, t, keep)
+    for y = 1, c.h do
+        for x = 1, c.w do
+            local p = c.pixels[y][x]
+            if p and p ~= keep then
+                c.pixels[y][x] = {
+                    p[1] + (target[1] - p[1]) * t,
+                    p[2] + (target[2] - p[2]) * t,
+                    p[3] + (target[3] - p[3]) * t,
+                    p[4] or 1,
+                }
+            end
+        end
+    end
+end
+
+-- Replace every opaque pixel with `replacement`, except those equal (by
+-- reference) to `keep` — same outline-preserving trick as tint_filter.
+function M.recolor_filter(c, replacement, keep)
+    for y = 1, c.h do
+        for x = 1, c.w do
+            local p = c.pixels[y][x]
+            if p and p ~= keep then
+                c.pixels[y][x] = replacement
+            end
+        end
+    end
+end
+
 function M.to_image(c)
     local data = love.image.newImageData(c.w, c.h)
     for y = 1, c.h do

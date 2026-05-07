@@ -56,13 +56,37 @@ local function frame_for(entity, frames, frame_dur)
     return frames[math.floor(t / frame_dur) % #frames + 1]
 end
 
+-- Resolve which animation frame to draw for an entity this tick. Priority:
+--   1. Death linger (anims.death for death_dur, then nil so the corpse vanishes)
+--   2. Attack flash (anims.attack for attack_dur)
+--   3. Loop animation (idle for monsters, walk for the moving hero)
+-- Returns nil if the entity should not be drawn at all.
+local function pick_image(entity, anims, loop_kind)
+    local now = love.timer.getTime()
+
+    if entity._death_at then
+        if now - entity._death_at < anims.death_dur then return anims.death end
+        return nil
+    end
+    if not entity.alive then return nil end
+
+    if entity._attack_at and now - entity._attack_at < anims.attack_dur then
+        return anims.attack
+    end
+
+    if loop_kind == "walk" then
+        return frame_for(entity, anims.walk, anims.walk_dur)
+    end
+    return frame_for(entity, anims.idle, anims.idle_dur)
+end
+
 function M.draw_monsters(monsters)
     love.graphics.setColor(1, 1, 1, 1)
     for _, m in ipairs(monsters) do
-        if m.alive then
+        local anims = assets.entity[m.type]
+        local img   = pick_image(m, anims, "idle")
+        if img then
             local px, py = grid.tile_to_pixel(m.x, m.y)
-            local anims = assets.entity[m.type]
-            local img   = frame_for(m, anims.idle, anims.idle_dur)
             love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
         end
     end
@@ -83,11 +107,12 @@ function M.draw_path(game)
 end
 
 function M.draw_hero(h)
-    if not h or not h.alive then return end
+    if not h then return end
+    local anims = assets.entity[h.class]
+    local img   = pick_image(h, anims, "walk")
+    if not img then return end
     local px, py = grid.tile_to_pixel(h.x, h.y)
     love.graphics.setColor(1, 1, 1, 1)
-    local anims = assets.entity[h.class]
-    local img   = frame_for(h, anims.walk, anims.walk_dur)
     love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
 end
 

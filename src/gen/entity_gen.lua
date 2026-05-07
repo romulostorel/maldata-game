@@ -89,7 +89,7 @@ local function paint_goblin_weapon(c)
     sprite.set_pixel(c, 18, 13, palette.rust_dark)
 end
 
-function M.gen_goblin(pose, seed)
+local function gen_goblin_canvas(pose, seed)
     pose = pose or "idle_a"
     rand.new(seed or 0)
     local c = sprite.new_canvas(M.SIZE, M.SIZE)
@@ -98,7 +98,11 @@ function M.gen_goblin(pose, seed)
     paint_goblin_legs(c, biped_lifted(pose))
     sprite.outline(c, palette.void)
     paint_goblin_weapon(c)
-    return sprite.to_image(c)
+    return c
+end
+
+function M.gen_goblin(pose, seed)
+    return sprite.to_image(gen_goblin_canvas(pose, seed))
 end
 
 -- ============================================================================
@@ -133,7 +137,7 @@ local function paint_orc_legs(c)
     sprite.fill_rect(c, 16, 22, 3, 1, palette.void)
 end
 
-function M.gen_orc(pose, seed)
+local function gen_orc_canvas(pose, seed)
     pose = pose or "idle_a"
     rand.new(seed or 0)
     local c = sprite.new_canvas(M.SIZE, M.SIZE)
@@ -141,7 +145,11 @@ function M.gen_orc(pose, seed)
     sprite.mirror_x(c)
     paint_orc_legs(c)
     sprite.outline(c, palette.void)
-    return sprite.to_image(c)
+    return c
+end
+
+function M.gen_orc(pose, seed)
+    return sprite.to_image(gen_orc_canvas(pose, seed))
 end
 
 -- ============================================================================
@@ -172,13 +180,17 @@ local function paint_slime_body(c, dy)
     sprite.set_pixel(c, 16, 22 + dy, body)
 end
 
-function M.gen_slime(pose, seed)
+local function gen_slime_canvas(pose, seed)
     pose = pose or "idle_a"
     rand.new(seed or 0)
     local c = sprite.new_canvas(M.SIZE, M.SIZE)
     paint_slime_body(c, bobber_dy(pose))
     sprite.outline(c, palette.void)
-    return sprite.to_image(c)
+    return c
+end
+
+function M.gen_slime(pose, seed)
+    return sprite.to_image(gen_slime_canvas(pose, seed))
 end
 
 -- ============================================================================
@@ -246,7 +258,7 @@ local function paint_warrior_weapon(c)
     sprite.fill_rect(c, 19, 18, 2, 2, palette.rust)
 end
 
-function M.gen_warrior(pose, seed)
+local function gen_warrior_canvas(pose, seed)
     pose = pose or "idle_a"
     rand.new(seed or 0)
     local c = sprite.new_canvas(M.SIZE, M.SIZE)
@@ -255,7 +267,11 @@ function M.gen_warrior(pose, seed)
     paint_warrior_legs(c, biped_lifted(pose))
     sprite.outline(c, palette.void)
     paint_warrior_weapon(c)
-    return sprite.to_image(c)
+    return c
+end
+
+function M.gen_warrior(pose, seed)
+    return sprite.to_image(gen_warrior_canvas(pose, seed))
 end
 
 -- ============================================================================
@@ -307,7 +323,7 @@ local function paint_archer_weapon(c)
     sprite.set_pixel(c, 17, 12, palette.gold_accent)
 end
 
-function M.gen_archer(pose, seed)
+local function gen_archer_canvas(pose, seed)
     pose = pose or "idle_a"
     rand.new(seed or 0)
     local c = sprite.new_canvas(M.SIZE, M.SIZE)
@@ -316,7 +332,11 @@ function M.gen_archer(pose, seed)
     paint_archer_legs(c, biped_lifted(pose))
     sprite.outline(c, palette.void)
     paint_archer_weapon(c)
-    return sprite.to_image(c)
+    return c
+end
+
+function M.gen_archer(pose, seed)
+    return sprite.to_image(gen_archer_canvas(pose, seed))
 end
 
 -- ============================================================================
@@ -352,7 +372,7 @@ local function paint_mage_weapon(c)
     sprite.set_pixel(c, 17,  7, palette.paper)
 end
 
-function M.gen_mage(pose, seed)
+local function gen_mage_canvas(pose, seed)
     pose = pose or "idle_a"
     rand.new(seed or 0)
     local c = sprite.new_canvas(M.SIZE, M.SIZE)
@@ -360,7 +380,11 @@ function M.gen_mage(pose, seed)
     sprite.mirror_x(c)
     sprite.outline(c, palette.void)
     paint_mage_weapon(c)
-    return sprite.to_image(c)
+    return c
+end
+
+function M.gen_mage(pose, seed)
+    return sprite.to_image(gen_mage_canvas(pose, seed))
 end
 
 -- ============================================================================
@@ -374,6 +398,18 @@ M.GENERATORS = {
     warrior = M.gen_warrior,
     archer  = M.gen_archer,
     mage    = M.gen_mage,
+}
+
+-- Canvas-returning variants used by anim_gen for post-processing (attack
+-- flash, death silhouette). Same signature as GENERATORS but you get the
+-- pixel grid back instead of a baked Image.
+M.CANVAS_GENERATORS = {
+    goblin  = gen_goblin_canvas,
+    orc     = gen_orc_canvas,
+    slime   = gen_slime_canvas,
+    warrior = gen_warrior_canvas,
+    archer  = gen_archer_canvas,
+    mage    = gen_mage_canvas,
 }
 
 return M
