@@ -1,14 +1,14 @@
--- Entry point: wires LÖVE callbacks to the game's state machine.
+-- Entry point: wires LÖVE callbacks to the game state.
 
 local render = require("src.render")
-local dungeon = require("src.dungeon")
+local state = require("src.state")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
-local current_dungeon
+local game
 
-local function fresh_dungeon()
-    return dungeon.generate(math.random(1, 2147483646))
+local function rand_seed()
+    return math.random(1, 2147483646)
 end
 
 function love.load()
@@ -16,10 +16,8 @@ function love.load()
     love.graphics.setDefaultFilter("nearest", "nearest")
     love.keyboard.setKeyRepeat(false)
 
-    -- Stage 4 will own the seed source; for now reseed from wall-clock time
-    -- so each launch shows a different dungeon.
     math.randomseed(os.time())
-    current_dungeon = fresh_dungeon()
+    game = state.new(rand_seed())
 end
 
 function love.update(dt)
@@ -27,19 +25,24 @@ function love.update(dt)
 end
 
 function love.draw()
-    render.draw_dungeon(current_dungeon)
+    render.draw_dungeon(game.dungeon)
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print(
-        ("FPS: %d   seed: %d   [R] regen   [ESC] quit")
-            :format(love.timer.getFPS(), current_dungeon.seed),
+        ("PHASE: %s    seed: %d    FPS: %d")
+            :format(game.phase:upper(), game.seed, love.timer.getFPS()),
         8, 8)
+    love.graphics.print(
+        "[SPACE] next phase    [R] new dungeon    [ESC] quit",
+        8, 24)
 end
 
 function love.keypressed(key)
     if key == "escape" then
         love.event.quit()
+    elseif key == "space" then
+        state.advance(game)
     elseif key == "r" then
-        current_dungeon = fresh_dungeon()
+        state.reset(game, rand_seed())
     end
 end
