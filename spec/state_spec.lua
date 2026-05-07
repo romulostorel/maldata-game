@@ -214,6 +214,42 @@ describe("state", function()
         end)
     end)
 
+    describe("monster removal", function()
+        it("removes a monster from a tile that has one", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_monster(s, t.x, t.y)
+            assert.is_true(state.try_remove_monster(s, t.x, t.y))
+            assert.are.equal(0, #s.monsters)
+        end)
+
+        it("returns false when no monster is on the tile", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            assert.is_false(state.try_remove_monster(s, t.x, t.y))
+        end)
+
+        it("only affects the targeted tile when several monsters are placed", function()
+            local s = state.new(7)
+            local tiles = free_tiles(s, 2)
+            state.try_place_monster(s, tiles[1].x, tiles[1].y)
+            state.try_place_monster(s, tiles[2].x, tiles[2].y)
+            assert.is_true(state.try_remove_monster(s, tiles[1].x, tiles[1].y))
+            assert.are.equal(1, #s.monsters)
+            assert.are.equal(tiles[2].x, s.monsters[1].x)
+            assert.are.equal(tiles[2].y, s.monsters[1].y)
+        end)
+
+        it("rejects removal outside the BUILD phase", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_monster(s, t.x, t.y)
+            state.advance(s)
+            assert.is_false(state.try_remove_monster(s, t.x, t.y))
+            assert.are.equal(1, #s.monsters)
+        end)
+    end)
+
     describe("select_monster_type", function()
         it("changes the active selection for known types", function()
             local s = state.new(1)

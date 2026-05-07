@@ -134,6 +134,21 @@ function M.try_place_monster(state, x, y)
     return true
 end
 
+-- Right-click undo. Build phase only — pulling a monster mid-invasion
+-- would let the player rewrite the fight reactively, breaking the v1
+-- design where placement is committed once invasion starts.
+function M.try_remove_monster(state, x, y)
+    if state.phase ~= M.PHASE_BUILD then return false end
+    for i, m in ipairs(state.monsters) do
+        if m.x == x and m.y == y then
+            table.remove(state.monsters, i)
+            audio.play("monster_remove")
+            return true
+        end
+    end
+    return false
+end
+
 function M.select_monster_type(state, type_key)
     if not monster.TYPES[type_key] then return false end
     state.selected_monster_type = type_key

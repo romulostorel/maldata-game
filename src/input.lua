@@ -1,6 +1,7 @@
--- Mouse + keyboard routing for the build phase: maps left-clicks to tile
--- placement and number keys to monster type selection. Routing only —
--- placement and validation live in state.lua.
+-- Mouse + keyboard routing for the build phase: maps left-click to tile
+-- placement, right-click to undo (remove a placed monster), and number
+-- keys to monster type selection. Routing only — placement and validation
+-- live in state.lua.
 
 local grid = require("src.grid")
 local monster = require("src.monster")
@@ -15,10 +16,14 @@ local KEY_TO_TYPE = {
 }
 
 function M.handle_mouse(game, px, py, button)
-    if button ~= 1 then return false end
     local tx, ty = grid.pixel_to_tile(px, py)
     if not tx then return false end
-    return state.try_place_monster(game, tx, ty)
+    if button == 1 then
+        return state.try_place_monster(game, tx, ty)
+    elseif button == 2 then
+        return state.try_remove_monster(game, tx, ty)
+    end
+    return false
 end
 
 function M.handle_key(game, key)

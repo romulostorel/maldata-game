@@ -92,6 +92,19 @@ function M.monster_place()
     return layer_head(body, 0.65, tick, 0.35)
 end
 
+-- 100ms undo pop. Higher pitch and shorter than monster_place — reads as
+-- "lifting off" rather than "set down". Same transient + body recipe but
+-- inverted in spirit.
+function M.monster_remove()
+    local body = waveform.triangle(280, 0.10, SR)
+    envelope.adsr(body, SR, 0.002, 0.020, 0.40, 0.078)
+
+    local pop = waveform.noise(0, 0.010, SR, 6363)
+    envelope.adsr(pop, SR, 0.001, 0.003, 0.0, 0.006)
+
+    return layer_head(body, 0.55, pop, 0.45)
+end
+
 -- 70ms footstep tap. Quiet by design — fires on every hero step. A short
 -- noise burst (the contact) layered on a low triangle (the foot weight).
 -- Seed jitters the body pitch ±5% and reseeds the noise tap so repeated
@@ -107,19 +120,39 @@ function M.hero_footstep(seed)
     return layer_head(body, 0.5, tap, 0.5)
 end
 
--- 200ms swoosh-style hero attack. Shaped noise reads as the swing arc;
--- a brief mid triangle accent gives it tonal presence so it doesn't
--- disappear into ambient noise once that exists. Variation: noise reseed
--- + accent pitch ±4%.
-function M.hero_attack(seed)
+-- Per-class hero attacks. Same swoosh-noise + tonal accent recipe; the
+-- class personality lives in the accent pitch and the body envelope.
+--   warrior — heavier, accent dropped an octave (220Hz).
+--   archer  — drier, no warm accent, shorter overall.
+--   mage    — brighter, accent up an octave (880Hz), longer release.
+
+function M.hero_attack_warrior(seed)
     local rng = jitter_rng(seed)
     local swoosh = waveform.noise(0, 0.20, SR, noise_seed(rng))
     envelope.adsr(swoosh, SR, 0.008, 0.040, 0.30, 0.152)
 
-    local accent = waveform.triangle(jitter(rng, 440, 0.04), 0.08, SR)
+    local accent = waveform.triangle(jitter(rng, 220, 0.04), 0.08, SR)
     envelope.adsr(accent, SR, 0.002, 0.020, 0.50, 0.058)
 
     return layer_head(swoosh, 0.55, accent, 0.45)
+end
+
+function M.hero_attack_archer(seed)
+    local rng = jitter_rng(seed)
+    local swoosh = waveform.noise(0, 0.15, SR, noise_seed(rng))
+    envelope.adsr(swoosh, SR, 0.003, 0.020, 0.20, 0.127)
+    return swoosh
+end
+
+function M.hero_attack_mage(seed)
+    local rng = jitter_rng(seed)
+    local swoosh = waveform.noise(0, 0.20, SR, noise_seed(rng))
+    envelope.adsr(swoosh, SR, 0.008, 0.040, 0.25, 0.152)
+
+    local accent = waveform.triangle(jitter(rng, 880, 0.04), 0.10, SR)
+    envelope.adsr(accent, SR, 0.002, 0.020, 0.50, 0.078)
+
+    return layer_head(swoosh, 0.50, accent, 0.50)
 end
 
 -- 150ms impact punch. Same transient+body recipe as monster_place but

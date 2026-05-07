@@ -37,7 +37,7 @@ local function on_combat_event(kind, attacker, target)
         effects.spawn_hit(target.x, target.y)
         effects.spawn_damage(target.x, target.y, attacker.atk, color)
         if attacker.class then
-            audio.play("hero_attack")
+            audio.play("hero_attack_" .. attacker.class)
         elseif attacker.type then
             audio.play("monster_attack_" .. attacker.type)
         end
@@ -124,15 +124,16 @@ function love.keypressed(key)
 end
 
 function love.mousepressed(x, y, button)
-    if button ~= 1 then return end
+    -- Left = place / confirm, right = undo placement. Anything else ignored.
+    if button ~= 1 and button ~= 2 then return end
 
     if show_audio then
-        audio_debug.mousepressed(x, y, button)
+        if button == 1 then audio_debug.mousepressed(x, y, button) end
         return
     end
 
     if game.phase == state.PHASE_RESULT then
-        if ui.is_restart_clicked(x, y) then
+        if button == 1 and ui.is_restart_clicked(x, y) then
             audio.play("ui_click")
             state.reset(game, rand_seed())
             effects.clear()
