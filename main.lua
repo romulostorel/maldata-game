@@ -7,7 +7,7 @@ local input       = require("src.input")
 local ui          = require("src.ui")
 local palette     = require("src.palette")
 local sprite_base = require("src.gen.sprite_base")
-local entity_gen  = require("src.gen.entity_gen")
+local anim_gen    = require("src.gen.anim_gen")
 local assets      = require("src.assets")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
@@ -49,7 +49,7 @@ function love.draw()
 
     if show_palette then palette.draw_debug() end
     if show_sprite_base then sprite_base.draw_debug() end
-    if show_entities then entity_gen.draw_debug() end
+    if show_entities then anim_gen.draw_debug() end
 end
 
 function love.keypressed(key)

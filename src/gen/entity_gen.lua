@@ -1,11 +1,19 @@
--- Entity sprite generators (24×24, centered in 32×32 tiles by the renderer).
--- Each function paints a left-half silhouette, calls mirror_x for symmetry,
--- adds asymmetric props (weapon, shield, highlight), then runs outline in
--- `void`. Pure: same seed → same image.
+-- Entity sprite generators (24×24). Each gen function takes (pose, seed)
+-- where pose ∈ { "idle_a", "idle_b", "walk_a", "walk_b" }.
 --
--- Silhouette grammar (rough Y bands, used loosely so each creature has its
--- own proportions): head 5..10, torso 11..16, hips 17..18, legs 19..21,
--- feet 22. Mirror axis is between x=12 and x=13.
+-- Pipeline per entity:
+--   1. paint_<x>_body(c, dy)        -- head/torso/arms (above legs)
+--   2. mirror_x  (skipped for slime: highlight is intentionally asymmetric)
+--   3. paint_<x>_legs(c, lifted)    -- legs/feet, asymmetric for walk poses
+--   4. outline (in `void`)
+--   5. paint_<x>_weapon(c)          -- asymmetric prop, drawn after outline
+--                                      so 1-px elements (string, glints) stay crisp
+--
+-- Pose handling differs by entity:
+--   * Bipeds with leg-lifting walk (goblin, warrior, archer):
+--       idle_b bobs the body up 1 px; walk_a/walk_b lift one foot.
+--   * "Bobbers" (orc, slime, mage) — legs are a single block or hidden under
+--       robe — both _b poses bob the whole body; walk == idle.
 
 local rand    = require("src.rand")
 local sprite  = require("src.gen.sprite_base")
@@ -14,360 +22,358 @@ local palette = require("src.palette")
 local M = {}
 
 M.SIZE = 24
+M.POSES = { "idle_a", "idle_b", "walk_a", "walk_b" }
+
+-- Pose helpers -------------------------------------------------------------
+local function biped_dy(pose)
+    return (pose == "idle_b") and -1 or 0
+end
+
+local function biped_lifted(pose)
+    if pose == "walk_a" then return "left" end
+    if pose == "walk_b" then return "right" end
+    return nil
+end
+
+local function bobber_dy(pose)
+    -- No leg motion: both _b poses bob the body.
+    return (pose == "idle_b" or pose == "walk_b") and -1 or 0
+end
 
 -- ============================================================================
--- Monsters
+-- Goblin (biped, leg-lifting walk)
 -- ============================================================================
 
-function M.gen_goblin(seed)
-    local _ = rand.new(seed)  -- reserved for future jittered details
-    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+local function paint_goblin_body(c, dy)
     local body  = palette.moss
     local shade = palette.moss_dark
     local eye   = palette.gold_accent
     local belt  = palette.rust_dark
 
-    -- Pointy ear jutting up-out from skull.
-    sprite.set_pixel(c,  9, 11, body)
-    sprite.set_pixel(c, 10, 10, body)
+    sprite.set_pixel(c,  9, 11 + dy, body)         -- ear
+    sprite.set_pixel(c, 10, 10 + dy, body)
+    sprite.fill_rect(c, 10, 11 + dy, 3, 3, body)   -- skull
+    sprite.fill_rect(c, 11, 10 + dy, 2, 1, body)
+    sprite.fill_rect(c, 10, 13 + dy, 3, 1, shade)  -- brow
+    sprite.set_pixel(c, 11, 12 + dy, eye)
+    sprite.fill_rect(c, 10, 14 + dy, 3, 4, body)   -- torso
+    sprite.fill_rect(c, 10, 17 + dy, 3, 1, shade)
+    sprite.fill_rect(c, 10, 18 + dy, 3, 1, belt)
+    sprite.fill_rect(c,  9, 14 + dy, 1, 4, body)   -- arm
+end
 
-    -- Skull (4×4) hunched forward.
-    sprite.fill_rect(c, 10, 11, 3, 3, body)
-    sprite.fill_rect(c, 11, 10, 2, 1, body)
+local function paint_goblin_legs(c, lifted)
+    local body  = palette.moss
+    local shade = palette.moss_dark
 
-    -- Brow shadow.
-    sprite.fill_rect(c, 10, 13, 3, 1, shade)
+    if lifted == nil then
+        sprite.fill_rect(c, 10, 19, 2, 3, body)
+        sprite.fill_rect(c, 14, 19, 2, 3, body)
+        sprite.fill_rect(c,  9, 22, 3, 1, shade)
+        sprite.fill_rect(c, 13, 22, 3, 1, shade)
+    elseif lifted == "left" then
+        sprite.fill_rect(c, 10, 20, 2, 2, body)
+        sprite.fill_rect(c, 14, 19, 2, 3, body)
+        sprite.fill_rect(c,  9, 21, 3, 1, shade)
+        sprite.fill_rect(c, 13, 22, 3, 1, shade)
+    else  -- "right"
+        sprite.fill_rect(c, 10, 19, 2, 3, body)
+        sprite.fill_rect(c, 14, 20, 2, 2, body)
+        sprite.fill_rect(c,  9, 22, 3, 1, shade)
+        sprite.fill_rect(c, 13, 21, 3, 1, shade)
+    end
+end
 
-    -- Eye.
-    sprite.set_pixel(c, 11, 12, eye)
-
-    -- Hunched torso, narrower than head.
-    sprite.fill_rect(c, 10, 14, 3, 4, body)
-    sprite.fill_rect(c, 10, 17, 3, 1, shade)
-
-    -- Belt.
-    sprite.fill_rect(c, 10, 18, 3, 1, belt)
-
-    -- Skinny arm hanging.
-    sprite.fill_rect(c,  9, 14, 1, 4, body)
-
-    -- Two short legs (mirror produces second leg with 2-px gap).
-    sprite.fill_rect(c, 10, 19, 2, 3, body)
-
-    -- Foot pad.
-    sprite.fill_rect(c,  9, 22, 3, 1, shade)
-
-    sprite.mirror_x(c)
-    sprite.outline(c, palette.void)
-
-    -- Crude club, asymmetric (no mirror), no extra outline so it stays slim.
+local function paint_goblin_weapon(c)
     sprite.fill_rect(c, 17, 14, 2, 5, palette.rust)
     sprite.set_pixel(c, 18, 13, palette.rust_dark)
+end
 
+function M.gen_goblin(pose, seed)
+    pose = pose or "idle_a"
+    rand.new(seed or 0)
+    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+    paint_goblin_body(c, biped_dy(pose))
+    sprite.mirror_x(c)
+    paint_goblin_legs(c, biped_lifted(pose))
+    sprite.outline(c, palette.void)
+    paint_goblin_weapon(c)
     return sprite.to_image(c)
 end
 
-function M.gen_orc(seed)
-    local _ = rand.new(seed)
-    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+-- ============================================================================
+-- Orc (biped, but legs are a single block — bobber-style walk)
+-- ============================================================================
+
+local function paint_orc_body(c, dy)
     local body  = palette.rust
     local shade = palette.rust_dark
     local eye   = palette.blood
     local tusk  = palette.bone
 
-    -- Big square skull.
-    sprite.fill_rect(c,  8,  6, 5, 5, body)
-    sprite.fill_rect(c,  8, 10, 5, 1, shade)
+    sprite.fill_rect(c,  8,  6 + dy, 5, 5, body)
+    sprite.fill_rect(c,  8, 10 + dy, 5, 1, shade)
+    sprite.set_pixel(c, 10,  8 + dy, eye)
+    sprite.set_pixel(c, 11, 11 + dy, tusk)
+    sprite.set_pixel(c, 11, 12 + dy, tusk)
+    sprite.fill_rect(c,  9, 11 + dy, 4, 1, body)
+    sprite.fill_rect(c,  7, 12 + dy, 6, 5, body)
+    sprite.fill_rect(c,  7, 15 + dy, 6, 1, shade)
+    sprite.fill_rect(c,  6, 13 + dy, 1, 5, body)
+    sprite.fill_rect(c,  8, 17 + dy, 5, 1, palette.void)
+end
 
-    -- Eye, deep-set.
-    sprite.set_pixel(c, 10, 8, eye)
+local function paint_orc_legs(c)
+    local body  = palette.rust
+    local shade = palette.rust_dark
 
-    -- Two tusks stick down from the chin.
-    sprite.set_pixel(c, 11, 11, tusk)
-    sprite.set_pixel(c, 11, 12, tusk)
-
-    -- Thick neck.
-    sprite.fill_rect(c,  9, 11, 4, 1, body)
-
-    -- Massive shoulders + chest.
-    sprite.fill_rect(c,  7, 12, 6, 5, body)
-    sprite.fill_rect(c,  7, 15, 6, 1, shade)
-
-    -- Burly arm.
-    sprite.fill_rect(c,  6, 13, 1, 5, body)
-
-    -- Belt slab.
-    sprite.fill_rect(c,  8, 17, 5, 1, palette.void)
-
-    -- Stocky legs.
-    sprite.fill_rect(c,  8, 18, 5, 4, body)
-    sprite.fill_rect(c,  8, 20, 5, 1, shade)
-
-    -- Foot.
+    sprite.fill_rect(c,  8, 18, 10, 4, body)
+    sprite.fill_rect(c,  8, 20, 10, 1, shade)
     sprite.fill_rect(c,  7, 22, 3, 1, palette.void)
+    sprite.fill_rect(c, 16, 22, 3, 1, palette.void)
+end
 
+function M.gen_orc(pose, seed)
+    pose = pose or "idle_a"
+    rand.new(seed or 0)
+    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+    paint_orc_body(c, bobber_dy(pose))
     sprite.mirror_x(c)
+    paint_orc_legs(c)
     sprite.outline(c, palette.void)
-
     return sprite.to_image(c)
 end
 
-function M.gen_slime(seed)
-    local _ = rand.new(seed)
-    local c = sprite.new_canvas(M.SIZE, M.SIZE)
-    local body = palette.ice
+-- ============================================================================
+-- Slime (no legs, no mirror — highlight is asymmetric on purpose)
+-- ============================================================================
+
+local function paint_slime_body(c, dy)
+    local body  = palette.ice
     local belly = palette.arcane
-    local hi   = palette.paper
-    local eye  = palette.void
+    local hi    = palette.paper
+    local eye   = palette.void
 
-    -- Round-ish blob: pyramid on top, wide middle, settling base.
-    sprite.fill_rect(c,  9, 12, 7, 1, body)   -- 9..15 x12
-    sprite.fill_rect(c,  8, 13, 9, 1, body)
-    sprite.fill_rect(c,  7, 14, 11, 6, body)  -- 7..17 wide middle
-    sprite.fill_rect(c,  8, 20, 9, 1, body)
-    sprite.fill_rect(c,  9, 21, 7, 1, body)
+    sprite.fill_rect(c,  9, 12 + dy, 7, 1, body)
+    sprite.fill_rect(c,  8, 13 + dy, 9, 1, body)
+    sprite.fill_rect(c,  7, 14 + dy, 11, 6, body)
+    sprite.fill_rect(c,  8, 20 + dy, 9, 1, body)
+    sprite.fill_rect(c,  9, 21 + dy, 7, 1, body)
 
-    -- Belly shadow band.
-    sprite.fill_rect(c,  8, 19, 9, 1, belly)
+    sprite.fill_rect(c,  8, 19 + dy, 9, 1, belly)
 
-    -- Two eyes (intentionally drawn whole — slime asymmetry would feel off).
-    sprite.fill_rect(c, 10, 15, 1, 2, eye)
-    sprite.fill_rect(c, 14, 15, 1, 2, eye)
+    sprite.fill_rect(c, 10, 15 + dy, 1, 2, eye)
+    sprite.fill_rect(c, 14, 15 + dy, 1, 2, eye)
 
-    -- Specular highlight, top-left only — gives the blob volume.
-    sprite.set_pixel(c,  9, 14, hi)
-    sprite.set_pixel(c, 10, 13, hi)
+    sprite.set_pixel(c,  9, 14 + dy, hi)
+    sprite.set_pixel(c, 10, 13 + dy, hi)
 
-    -- Drips at the base corners.
-    sprite.set_pixel(c,  8, 22, body)
-    sprite.set_pixel(c, 16, 22, body)
+    sprite.set_pixel(c,  8, 22 + dy, body)
+    sprite.set_pixel(c, 16, 22 + dy, body)
+end
 
+function M.gen_slime(pose, seed)
+    pose = pose or "idle_a"
+    rand.new(seed or 0)
+    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+    paint_slime_body(c, bobber_dy(pose))
     sprite.outline(c, palette.void)
     return sprite.to_image(c)
 end
 
 -- ============================================================================
--- Heroes
+-- Warrior (biped, leg-lifting walk; sword + shield post-outline)
 -- ============================================================================
 
-function M.gen_warrior(seed)
-    local _ = rand.new(seed)
-    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+local function paint_warrior_body(c, dy)
     local armor = palette.bone
     local shade = palette.stone_light
     local skin  = palette.flesh
     local plume = palette.blood
     local trim  = palette.gold_accent
 
-    -- Helmet plume.
-    sprite.set_pixel(c, 12, 4, plume)
-    sprite.set_pixel(c, 11, 5, plume)
-    sprite.set_pixel(c, 12, 5, plume)
+    sprite.set_pixel(c, 12, 4 + dy, plume)
+    sprite.set_pixel(c, 11, 5 + dy, plume)
+    sprite.set_pixel(c, 12, 5 + dy, plume)
+    sprite.fill_rect(c,  9,  6 + dy, 4, 4, armor)
+    sprite.fill_rect(c,  9,  6 + dy, 4, 1, shade)
+    sprite.fill_rect(c,  9,  8 + dy, 4, 1, palette.void)
+    sprite.fill_rect(c, 10, 10 + dy, 3, 1, skin)
+    sprite.set_pixel(c,  7, 11 + dy, armor)
+    sprite.set_pixel(c,  8, 11 + dy, armor)
+    sprite.fill_rect(c,  8, 12 + dy, 5, 5, armor)
+    sprite.fill_rect(c,  8, 12 + dy, 5, 1, shade)
+    sprite.set_pixel(c, 12, 13 + dy, trim)
+    sprite.set_pixel(c, 12, 14 + dy, trim)
+    sprite.fill_rect(c,  7, 13 + dy, 1, 4, armor)
+    sprite.fill_rect(c,  9, 17 + dy, 4, 1, palette.void)
+end
 
-    -- Helm.
-    sprite.fill_rect(c,  9,  6, 4, 4, armor)
-    sprite.fill_rect(c,  9,  6, 4, 1, shade)
+local function paint_warrior_legs(c, lifted)
+    local armor = palette.bone
+    local shade = palette.stone_light
+    local foot  = palette.void
 
-    -- Visor slit.
-    sprite.fill_rect(c,  9,  8, 4, 1, palette.void)
+    if lifted == nil then
+        sprite.fill_rect(c, 9, 18, 8, 4, armor)
+        sprite.fill_rect(c, 9, 18, 8, 1, shade)
+        sprite.fill_rect(c, 9, 22, 8, 1, foot)
+    elseif lifted == "left" then
+        sprite.fill_rect(c,  9, 19, 3, 2, armor)
+        sprite.fill_rect(c, 14, 18, 3, 4, armor)
+        sprite.fill_rect(c,  9, 19, 3, 1, shade)
+        sprite.fill_rect(c, 14, 18, 3, 1, shade)
+        sprite.fill_rect(c,  9, 21, 3, 1, foot)
+        sprite.fill_rect(c, 14, 22, 3, 1, foot)
+    else  -- "right"
+        sprite.fill_rect(c,  9, 18, 3, 4, armor)
+        sprite.fill_rect(c, 14, 19, 3, 2, armor)
+        sprite.fill_rect(c,  9, 18, 3, 1, shade)
+        sprite.fill_rect(c, 14, 19, 3, 1, shade)
+        sprite.fill_rect(c,  9, 22, 3, 1, foot)
+        sprite.fill_rect(c, 14, 21, 3, 1, foot)
+    end
+end
 
-    -- Chin (skin under helmet).
-    sprite.fill_rect(c, 10, 10, 3, 1, skin)
-
-    -- Pauldron.
-    sprite.set_pixel(c,  7, 11, armor)
-    sprite.set_pixel(c,  8, 11, armor)
-
-    -- Cuirass.
-    sprite.fill_rect(c,  8, 12, 5, 5, armor)
-    sprite.fill_rect(c,  8, 12, 5, 1, shade)
-    sprite.set_pixel(c, 12, 13, trim)
-    sprite.set_pixel(c, 12, 14, trim)
-
-    -- Arm.
-    sprite.fill_rect(c,  7, 13, 1, 4, armor)
-
-    -- Belt.
-    sprite.fill_rect(c,  9, 17, 4, 1, palette.void)
-
-    -- Greaves.
-    sprite.fill_rect(c,  9, 18, 4, 4, armor)
-    sprite.fill_rect(c,  9, 18, 4, 1, shade)
-
-    -- Foot.
-    sprite.fill_rect(c,  9, 22, 4, 1, palette.void)
-
-    sprite.mirror_x(c)
-    sprite.outline(c, palette.void)
-
-    -- Asymmetric: shield on left flank, sword on right flank.
-    sprite.fill_rect(c,  4, 13, 2, 6, palette.rust_dark)
-    sprite.fill_rect(c,  4, 13, 2, 1, palette.bone)
-    sprite.set_pixel(c,  5, 16, palette.gold_accent)
+local function paint_warrior_weapon(c)
+    sprite.fill_rect(c, 4, 13, 2, 6, palette.rust_dark)
+    sprite.fill_rect(c, 4, 13, 2, 1, palette.bone)
+    sprite.set_pixel(c, 5, 16, palette.gold_accent)
 
     sprite.fill_rect(c, 19,  8, 2, 9, palette.bone)
     sprite.set_pixel(c, 20,  7, palette.paper)
     sprite.fill_rect(c, 18, 17, 4, 1, palette.gold_accent)
     sprite.fill_rect(c, 19, 18, 2, 2, palette.rust)
+end
 
+function M.gen_warrior(pose, seed)
+    pose = pose or "idle_a"
+    rand.new(seed or 0)
+    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+    paint_warrior_body(c, biped_dy(pose))
+    sprite.mirror_x(c)
+    paint_warrior_legs(c, biped_lifted(pose))
+    sprite.outline(c, palette.void)
+    paint_warrior_weapon(c)
     return sprite.to_image(c)
 end
 
-function M.gen_archer(seed)
-    local _ = rand.new(seed)
-    local c = sprite.new_canvas(M.SIZE, M.SIZE)
-    local hood = palette.moss_dark
-    local skin = palette.flesh
+-- ============================================================================
+-- Archer (biped, leg-lifting walk; bow post-outline)
+-- ============================================================================
+
+local function paint_archer_body(c, dy)
+    local hood  = palette.moss_dark
+    local skin  = palette.flesh
     local tunic = palette.moss
-    local belt = palette.rust_dark
-    local boots = palette.void
+    local belt  = palette.rust_dark
 
-    -- Hood crown.
-    sprite.fill_rect(c, 10,  6, 3, 1, hood)
-    sprite.fill_rect(c,  9,  7, 4, 4, hood)
+    sprite.fill_rect(c, 10, 6 + dy, 3, 1, hood)
+    sprite.fill_rect(c,  9, 7 + dy, 4, 4, hood)
+    sprite.fill_rect(c, 10, 8 + dy, 3, 2, palette.void)
+    sprite.set_pixel(c, 11, 9 + dy, skin)
+    sprite.set_pixel(c, 12, 9 + dy, skin)
+    sprite.fill_rect(c, 11, 10 + dy, 2, 1, skin)
+    sprite.fill_rect(c,  8, 11 + dy, 5, 4, hood)
+    sprite.fill_rect(c,  9, 15 + dy, 4, 1, belt)
+    sprite.fill_rect(c,  9, 16 + dy, 4, 3, tunic)
+end
 
-    -- Face shadow inside hood + nose/cheek showing.
-    sprite.fill_rect(c, 10,  8, 3, 2, palette.void)
-    sprite.set_pixel(c, 11,  9, skin)
-    sprite.set_pixel(c, 12,  9, skin)
-    sprite.fill_rect(c, 11, 10, 2, 1, skin)
+local function paint_archer_legs(c, lifted)
+    local trousers = palette.rust_dark
+    local boots    = palette.void
 
-    -- Cape over shoulders.
-    sprite.fill_rect(c,  8, 11, 5, 4, hood)
+    if lifted == nil then
+        sprite.fill_rect(c, 9, 19, 8, 3, trousers)
+        sprite.fill_rect(c, 9, 22, 8, 1, boots)
+    elseif lifted == "left" then
+        sprite.fill_rect(c,  9, 20, 3, 2, trousers)
+        sprite.fill_rect(c, 14, 19, 3, 3, trousers)
+        sprite.fill_rect(c,  9, 21, 3, 1, boots)
+        sprite.fill_rect(c, 14, 22, 3, 1, boots)
+    else  -- "right"
+        sprite.fill_rect(c,  9, 19, 3, 3, trousers)
+        sprite.fill_rect(c, 14, 20, 3, 2, trousers)
+        sprite.fill_rect(c,  9, 22, 3, 1, boots)
+        sprite.fill_rect(c, 14, 21, 3, 1, boots)
+    end
+end
 
-    -- Belt.
-    sprite.fill_rect(c,  9, 15, 4, 1, belt)
-
-    -- Tunic body.
-    sprite.fill_rect(c,  9, 16, 4, 3, tunic)
-
-    -- Trousers.
-    sprite.fill_rect(c,  9, 19, 4, 3, palette.rust_dark)
-
-    -- Boots.
-    sprite.fill_rect(c,  9, 22, 4, 1, boots)
-
-    sprite.mirror_x(c)
-    sprite.outline(c, palette.void)
-
-    -- Asymmetric bow on the right side, drawn after outline so the curve
-    -- and string stay crisp (1-px elements would smear under outline).
+local function paint_archer_weapon(c)
     sprite.set_pixel(c, 18,  7, palette.rust)
     sprite.fill_rect(c, 19,  8, 1, 9, palette.rust)
     sprite.set_pixel(c, 18, 17, palette.rust)
     sprite.fill_rect(c, 18,  9, 1, 7, palette.bone)
     sprite.set_pixel(c, 17, 12, palette.gold_accent)
+end
 
+function M.gen_archer(pose, seed)
+    pose = pose or "idle_a"
+    rand.new(seed or 0)
+    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+    paint_archer_body(c, biped_dy(pose))
+    sprite.mirror_x(c)
+    paint_archer_legs(c, biped_lifted(pose))
+    sprite.outline(c, palette.void)
+    paint_archer_weapon(c)
     return sprite.to_image(c)
 end
 
-function M.gen_mage(seed)
-    local _ = rand.new(seed)
-    local c = sprite.new_canvas(M.SIZE, M.SIZE)
-    local robe = palette.arcane
-    local skin = palette.flesh
+-- ============================================================================
+-- Mage (legs hidden under robe — bobber-style walk; staff post-outline)
+-- ============================================================================
+
+local function paint_mage_body(c, dy)
+    local robe  = palette.arcane
+    local skin  = palette.flesh
     local beard = palette.bone
 
-    -- Tall pointed wizard hat.
-    sprite.set_pixel(c, 12, 3, robe)
-    sprite.fill_rect(c, 11, 4, 2, 1, robe)
-    sprite.fill_rect(c, 11, 5, 2, 1, robe)
-    sprite.fill_rect(c, 10, 6, 3, 1, robe)
+    sprite.set_pixel(c, 12, 3 + dy, robe)
+    sprite.fill_rect(c, 11, 4 + dy, 2, 1, robe)
+    sprite.fill_rect(c, 11, 5 + dy, 2, 1, robe)
+    sprite.fill_rect(c, 10, 6 + dy, 3, 1, robe)
+    sprite.fill_rect(c,  9, 7 + dy, 4, 1, robe)
 
-    -- Wide hat brim.
-    sprite.fill_rect(c,  9, 7, 4, 1, robe)
+    sprite.fill_rect(c, 10, 8 + dy, 3, 2, skin)
+    sprite.set_pixel(c, 11, 9 + dy, palette.void)
 
-    -- Face.
-    sprite.fill_rect(c, 10, 8, 3, 2, skin)
-    sprite.set_pixel(c, 11, 9, palette.void)
+    sprite.fill_rect(c, 10, 10 + dy, 3, 2, beard)
 
-    -- Beard.
-    sprite.fill_rect(c, 10, 10, 3, 2, beard)
+    sprite.fill_rect(c,  9, 12 + dy, 4, 2, robe)
+    sprite.fill_rect(c,  9, 14 + dy, 4, 7, robe)
+    sprite.fill_rect(c,  8, 21 + dy, 5, 1, robe)
+    sprite.fill_rect(c, 12, 14 + dy, 1, 7, palette.void)
+end
 
-    -- Shoulders.
-    sprite.fill_rect(c,  9, 12, 4, 2, robe)
-
-    -- Long robe (no leg detail) flaring slightly at the bottom.
-    sprite.fill_rect(c,  9, 14, 4, 7, robe)
-    sprite.fill_rect(c,  8, 21, 5, 1, robe)
-
-    -- Robe central fold.
-    sprite.fill_rect(c, 12, 14, 1, 7, palette.void)
-
-    sprite.mirror_x(c)
-    sprite.outline(c, palette.void)
-
-    -- Asymmetric staff with glowing orb (drawn after outline for crisp glow).
+local function paint_mage_weapon(c)
     sprite.fill_rect(c, 18,  9, 1, 13, palette.rust_dark)
     sprite.fill_rect(c, 17,  6, 3, 3, palette.ember)
     sprite.set_pixel(c, 18,  7, palette.gold_accent)
     sprite.set_pixel(c, 17,  7, palette.paper)
+end
 
+function M.gen_mage(pose, seed)
+    pose = pose or "idle_a"
+    rand.new(seed or 0)
+    local c = sprite.new_canvas(M.SIZE, M.SIZE)
+    paint_mage_body(c, bobber_dy(pose))
+    sprite.mirror_x(c)
+    sprite.outline(c, palette.void)
+    paint_mage_weapon(c)
     return sprite.to_image(c)
 end
 
 -- ============================================================================
--- Debug screen (F3): all six entities at 6× scale on a 3×2 grid.
+-- Type → generator dispatch (used by anim_gen.lua and the registry)
 -- ============================================================================
 
-local debug_cache = nil
-
-local function build_debug_cache()
-    return {
-        { "goblin",  M.gen_goblin(101)  },
-        { "orc",     M.gen_orc(102)     },
-        { "slime",   M.gen_slime(103)   },
-        { "warrior", M.gen_warrior(201) },
-        { "archer",  M.gen_archer(202)  },
-        { "mage",    M.gen_mage(203)    },
-    }
-end
-
-function M.draw_debug()
-    if not debug_cache then debug_cache = build_debug_cache() end
-
-    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
-
-    love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.96)
-    love.graphics.rectangle("fill", 0, 0, W, H)
-
-    love.graphics.setColor(palette.paper)
-    love.graphics.print("ENTITIES — static silhouettes  (F3 to toggle)", 16, 12)
-    love.graphics.setColor(palette.bone)
-    love.graphics.print("24x24 sprites at 6x scale; outline in 'void'; weapons asymmetric",
-        16, 28)
-
-    local cols, rows = 3, 2
-    local scale = 6
-    local sprite_size = M.SIZE * scale
-    local pad = 4
-    local panel = sprite_size + pad * 2
-    local gap_x, gap_y = 32, 50
-    local total_w = cols * panel + (cols - 1) * gap_x
-    local total_h = rows * panel + (rows - 1) * gap_y
-    local x0 = math.floor((W - total_w) / 2)
-    local y0 = math.floor((H - total_h) / 2) + 12
-
-    for i, e in ipairs(debug_cache) do
-        local name, img = e[1], e[2]
-        local col = (i - 1) % cols
-        local row = math.floor((i - 1) / cols)
-        local x = x0 + col * (panel + gap_x)
-        local y = y0 + row * (panel + gap_y)
-
-        love.graphics.setColor(palette.stone_dark)
-        love.graphics.rectangle("fill", x, y, panel, panel)
-        love.graphics.setColor(palette.stone)
-        love.graphics.rectangle("line", x, y, panel, panel)
-
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(img, x + pad, y + pad, 0, scale, scale)
-
-        love.graphics.setColor(palette.paper)
-        love.graphics.print(name, x, y + panel + 8)
-    end
-
-    love.graphics.setColor(1, 1, 1, 1)
-end
+M.GENERATORS = {
+    goblin  = M.gen_goblin,
+    orc     = M.gen_orc,
+    slime   = M.gen_slime,
+    warrior = M.gen_warrior,
+    archer  = M.gen_archer,
+    mage    = M.gen_mage,
+}
 
 return M

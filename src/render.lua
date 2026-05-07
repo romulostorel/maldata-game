@@ -45,13 +45,25 @@ function M.draw_dungeon(d)
     end
 end
 
+-- Per-entity animation state lives lazily on the entity table itself
+-- (`_anim_phase`). Phase is seeded from the entity's spawn position so two
+-- monsters in adjacent tiles don't bob in lockstep.
+local function frame_for(entity, frames, frame_dur)
+    if not entity._anim_phase then
+        entity._anim_phase = ((entity.x or 0) * 0.13 + (entity.y or 0) * 0.31) % 1
+    end
+    local t = love.timer.getTime() + entity._anim_phase
+    return frames[math.floor(t / frame_dur) % #frames + 1]
+end
+
 function M.draw_monsters(monsters)
     love.graphics.setColor(1, 1, 1, 1)
     for _, m in ipairs(monsters) do
         if m.alive then
             local px, py = grid.tile_to_pixel(m.x, m.y)
-            love.graphics.draw(assets.entity[m.type],
-                px + SPRITE_INSET, py + SPRITE_INSET)
+            local anims = assets.entity[m.type]
+            local img   = frame_for(m, anims.idle, anims.idle_dur)
+            love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
         end
     end
 end
@@ -74,8 +86,9 @@ function M.draw_hero(h)
     if not h or not h.alive then return end
     local px, py = grid.tile_to_pixel(h.x, h.y)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(assets.entity[h.class],
-        px + SPRITE_INSET, py + SPRITE_INSET)
+    local anims = assets.entity[h.class]
+    local img   = frame_for(h, anims.walk, anims.walk_dur)
+    love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
 end
 
 function M.draw_build_cursor(game)

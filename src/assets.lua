@@ -3,8 +3,8 @@
 -- generator directly. Variation seeds are fixed so the visual identity of
 -- the game is reproducible across runs.
 
-local tile_gen   = require("src.gen.tile_gen")
-local entity_gen = require("src.gen.entity_gen")
+local tile_gen = require("src.gen.tile_gen")
+local anim_gen = require("src.gen.anim_gen")
 
 local M = {}
 
@@ -15,8 +15,9 @@ M.tiles = {
     treasure = nil,
 }
 
--- Static entity sprites. Stage 5 will replace each entry with an animation
--- table { idle = {...}, walk = {...}, attack = ..., death = ... }.
+-- Per-entity animation table. Shape (see anim_gen.gen_entity_anims):
+--   { idle = { Image, Image }, walk = { Image, Image },
+--     idle_dur = float, walk_dur = float }
 M.entity = {
     goblin  = nil,
     orc     = nil,
@@ -39,12 +40,12 @@ function M.load()
     M.tiles.door     = tile_gen.gen_door(3000)
     M.tiles.treasure = tile_gen.gen_treasure(4000)
 
-    M.entity.goblin  = entity_gen.gen_goblin(5001)
-    M.entity.orc     = entity_gen.gen_orc(5002)
-    M.entity.slime   = entity_gen.gen_slime(5003)
-    M.entity.warrior = entity_gen.gen_warrior(5004)
-    M.entity.archer  = entity_gen.gen_archer(5005)
-    M.entity.mage    = entity_gen.gen_mage(5006)
+    M.entity.goblin  = anim_gen.gen_entity_anims("goblin",  5001)
+    M.entity.orc     = anim_gen.gen_entity_anims("orc",     5002)
+    M.entity.slime   = anim_gen.gen_entity_anims("slime",   5003)
+    M.entity.warrior = anim_gen.gen_entity_anims("warrior", 5004)
+    M.entity.archer  = anim_gen.gen_entity_anims("archer",  5005)
+    M.entity.mage    = anim_gen.gen_entity_anims("mage",    5006)
 end
 
 -- Stable per-position variation index. Multipliers are coprime with the
