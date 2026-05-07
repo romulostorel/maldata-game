@@ -58,6 +58,25 @@ function M.triangle(freq, dur, sample_rate)
     return samples
 end
 
+-- Triangle wave with linear frequency sweep f0 → f1 over the buffer.
+-- Phase accumulates sample-by-sample so the slide stays continuous (no
+-- audible discontinuity even with steep sweeps). Used for tonal descent
+-- in death SFX and any future "drop" cue.
+function M.triangle_sweep(f0, f1, dur, sample_rate)
+    local n = num_samples(dur, sample_rate)
+    local samples = {}
+    local phase = 0
+    local denom = math.max(1, n - 1)
+    for i = 1, n do
+        local t = (i - 1) / denom
+        local f = f0 + (f1 - f0) * t
+        phase = phase + f / sample_rate
+        local p = phase - math.floor(phase)
+        samples[i] = (p < 0.5) and (p * 4 - 1) or (3 - p * 4)
+    end
+    return samples
+end
+
 -- White noise via Park-Miller MINSTD (same family as src/rand.lua, kept inline
 -- so this file stays a self-contained sample-generation module).
 function M.noise(_freq, dur, sample_rate, seed)

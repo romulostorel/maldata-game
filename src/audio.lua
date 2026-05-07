@@ -18,13 +18,19 @@ local M = {}
 -- Per-SFX bake recipe. `gen` returns a sample table; `volume` is the
 -- master volume of the resulting Source (clones inherit it).
 local SFX = {
-    ui_hover         = { gen = sfx_gen.ui_hover,         volume = 0.30 },
-    ui_click         = { gen = sfx_gen.ui_click,         volume = 0.55 },
-    phase_transition = { gen = sfx_gen.phase_transition, volume = 0.70 },
-    monster_place    = { gen = sfx_gen.monster_place,    volume = 0.65 },
-    hero_footstep    = { gen = sfx_gen.hero_footstep,    volume = 0.20 },
-    hero_attack      = { gen = sfx_gen.hero_attack,      volume = 0.50 },
-    hit_impact       = { gen = sfx_gen.hit_impact,       volume = 0.55 },
+    ui_hover               = { gen = sfx_gen.ui_hover,               volume = 0.30 },
+    ui_click               = { gen = sfx_gen.ui_click,               volume = 0.55 },
+    phase_transition       = { gen = sfx_gen.phase_transition,       volume = 0.70 },
+    monster_place          = { gen = sfx_gen.monster_place,          volume = 0.65 },
+    hero_footstep          = { gen = sfx_gen.hero_footstep,          volume = 0.20 },
+    hero_attack            = { gen = sfx_gen.hero_attack,            volume = 0.50 },
+    hit_impact             = { gen = sfx_gen.hit_impact,             volume = 0.55 },
+    monster_attack_goblin  = { gen = sfx_gen.monster_attack_goblin,  volume = 0.50 },
+    monster_attack_orc     = { gen = sfx_gen.monster_attack_orc,     volume = 0.55 },
+    monster_attack_slime   = { gen = sfx_gen.monster_attack_slime,   volume = 0.50 },
+    monster_death_goblin   = { gen = sfx_gen.monster_death_goblin,   volume = 0.65 },
+    monster_death_orc      = { gen = sfx_gen.monster_death_orc,      volume = 0.70 },
+    monster_death_slime    = { gen = sfx_gen.monster_death_slime,    volume = 0.65 },
 }
 
 local sources = {}

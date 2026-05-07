@@ -106,4 +106,73 @@ function M.hit_impact()
     return layer_head(body, 0.55, crack, 0.45)
 end
 
+-- ---------------------------------------------------------------------------
+-- Monster SFX. Per-type character per the design brief:
+--   goblin = sharp/agudo, orc = grave/heavy, slime = wet/noisy.
+-- Attacks ~150–280ms, deaths 350–500ms with a tonal descent.
+-- ---------------------------------------------------------------------------
+
+-- Goblin attack: 150ms square yelp + small noise crack.
+function M.monster_attack_goblin()
+    local body = waveform.square(660, 0.15, SR)
+    envelope.adsr(body, SR, 0.005, 0.030, 0.40, 0.115)
+
+    local crack = waveform.noise(0, 0.015, SR, 1212)
+    envelope.adsr(crack, SR, 0.001, 0.005, 0.0, 0.009)
+
+    return layer_head(body, 0.55, crack, 0.45)
+end
+
+-- Orc attack: 280ms low sawtooth growl + rumble noise. Sawtooth's harmonic
+-- richness reads as "throaty" where a triangle would feel polite.
+function M.monster_attack_orc()
+    local body = waveform.sawtooth(140, 0.28, SR)
+    envelope.adsr(body, SR, 0.010, 0.060, 0.60, 0.210)
+
+    local rumble = waveform.noise(0, 0.080, SR, 3434)
+    envelope.adsr(rumble, SR, 0.005, 0.025, 0.30, 0.050)
+
+    return layer_head(body, 0.55, rumble, 0.45)
+end
+
+-- Slime attack: 220ms wet smack — heavier on noise than tone, with a
+-- low triangle so it has body. The noise-heavy mix gives the gurgle.
+function M.monster_attack_slime()
+    local body = waveform.triangle(95, 0.22, SR)
+    envelope.adsr(body, SR, 0.010, 0.050, 0.50, 0.160)
+
+    local goo = waveform.noise(0, 0.18, SR, 5656)
+    envelope.adsr(goo, SR, 0.008, 0.060, 0.40, 0.112)
+
+    return layer_head(body, 0.40, goo, 0.60)
+end
+
+-- Goblin death: 350ms triangle sweep 660 → 220 (octave + fifth down).
+-- Quick attack so the descent dominates the perception.
+function M.monster_death_goblin()
+    local s = waveform.triangle_sweep(660, 220, 0.35, SR)
+    envelope.adsr(s, SR, 0.005, 0.05, 0.40, 0.295)
+    return s
+end
+
+-- Orc death: 500ms triangle sweep 200 → 70 (deep rumble drop). Slower
+-- attack and longer release sell the "heavy thing fell over" feel.
+function M.monster_death_orc()
+    local s = waveform.triangle_sweep(200, 70, 0.50, SR)
+    envelope.adsr(s, SR, 0.010, 0.080, 0.60, 0.410)
+    return s
+end
+
+-- Slime death: 400ms — low pitch sweep with noisy fade, like the slime
+-- collapses into a puddle. Body sweep + decaying gurgle layer.
+function M.monster_death_slime()
+    local body = waveform.triangle_sweep(160, 60, 0.40, SR)
+    envelope.adsr(body, SR, 0.010, 0.060, 0.55, 0.330)
+
+    local gurgle = waveform.noise(0, 0.40, SR, 8181)
+    envelope.adsr(gurgle, SR, 0.020, 0.080, 0.40, 0.300)
+
+    return layer_head(body, 0.50, gurgle, 0.50)
+end
+
 return M

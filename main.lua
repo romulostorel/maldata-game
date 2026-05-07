@@ -36,11 +36,18 @@ local function on_combat_event(kind, attacker, target)
         local color = target.class and palette.blood or palette.paper
         effects.spawn_hit(target.x, target.y)
         effects.spawn_damage(target.x, target.y, attacker.atk, color)
-        if attacker.class then audio.play("hero_attack") end
+        if attacker.class then
+            audio.play("hero_attack")
+        elseif attacker.type then
+            audio.play("monster_attack_" .. attacker.type)
+        end
         audio.play("hit_impact")
     elseif kind == "death" then
         attacker._death_at = now  -- "attacker" arg holds the dying entity here
         effects.spawn_scatter(attacker.x, attacker.y)
+        if attacker.type then
+            audio.play("monster_death_" .. attacker.type)
+        end
     elseif kind == "move" then
         if attacker.class then audio.play("hero_footstep") end
     end
