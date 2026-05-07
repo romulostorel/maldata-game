@@ -47,6 +47,8 @@ local function on_combat_event(kind, attacker, target)
         effects.spawn_scatter(attacker.x, attacker.y)
         if attacker.type then
             audio.play("monster_death_" .. attacker.type)
+        elseif attacker.class then
+            audio.play("hero_death")
         end
     elseif kind == "move" then
         if attacker.class then audio.play("hero_footstep") end

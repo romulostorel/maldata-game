@@ -31,6 +31,9 @@ local SFX = {
     monster_death_goblin   = { gen = sfx_gen.monster_death_goblin,   volume = 0.65 },
     monster_death_orc      = { gen = sfx_gen.monster_death_orc,      volume = 0.70 },
     monster_death_slime    = { gen = sfx_gen.monster_death_slime,    volume = 0.65 },
+    hero_death             = { gen = sfx_gen.hero_death,             volume = 0.75 },
+    victory_sting          = { gen = sfx_gen.victory_sting,          volume = 0.65 },
+    defeat_sting           = { gen = sfx_gen.defeat_sting,           volume = 0.65 },
 }
 
 local sources = {}

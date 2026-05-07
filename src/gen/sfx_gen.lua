@@ -175,4 +175,49 @@ function M.monster_death_slime()
     return layer_head(body, 0.50, gurgle, 0.50)
 end
 
+-- ---------------------------------------------------------------------------
+-- Dramatic SFX: hero death + result-screen stings.
+-- ---------------------------------------------------------------------------
+
+-- 700ms hero death: octave drop (220 → 110) on triangle. Long release so
+-- the descent has time to register as "the hero is gone". Heavier sustain
+-- than monster deaths because this matters more emotionally.
+function M.hero_death()
+    local s = waveform.triangle_sweep(220, 110, 0.70, SR)
+    envelope.adsr(s, SR, 0.020, 0.100, 0.70, 0.580)
+    return s
+end
+
+-- Build one note for an arpeggio: triangle wave with the supplied envelope.
+-- Helper kept local to the stings so callers can lay out arpeggios cleanly.
+local function arp_note(freq, dur, attack, decay, sustain, release)
+    local s = waveform.triangle(freq, dur, SR)
+    envelope.adsr(s, SR, attack, decay, sustain, release)
+    return s
+end
+
+-- 800ms ascending C major arpeggio (C5-E5-G5-C6). "Player won" cue —
+-- the hero was defeated, the dungeon held. Rising line resolves on the
+-- octave. Each note's release is shorter than its duration so the next
+-- note kicks in before the previous fully fades, gluing the line.
+function M.victory_sting()
+    local n1 = arp_note(523, 0.20, 0.005, 0.030, 0.60, 0.165)
+    local n2 = arp_note(659, 0.20, 0.005, 0.030, 0.60, 0.165)
+    local n3 = arp_note(784, 0.20, 0.005, 0.030, 0.60, 0.165)
+    local n4 = arp_note(1047, 0.30, 0.005, 0.040, 0.55, 0.255)
+    return concat(concat(concat(n1, n2), n3), n4)
+end
+
+-- 1.18s descending phrygian-flavored line (A4-F4-D4-Bb3). "Player lost"
+-- cue — hero stole the treasure. The flat 2nd at the bottom (Bb against
+-- A as tonic) is what makes the resolution feel ominous instead of just
+-- sad. Each note slightly longer than the last for a ritardando feel.
+function M.defeat_sting()
+    local n1 = arp_note(440, 0.25, 0.010, 0.040, 0.60, 0.200)
+    local n2 = arp_note(349, 0.28, 0.010, 0.045, 0.60, 0.225)
+    local n3 = arp_note(293, 0.30, 0.012, 0.050, 0.60, 0.238)
+    local n4 = arp_note(233, 0.35, 0.015, 0.060, 0.65, 0.275)
+    return concat(concat(concat(n1, n2), n3), n4)
+end
+
 return M

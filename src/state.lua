@@ -55,10 +55,21 @@ local function index_of(phase)
     end
 end
 
--- Single chokepoint for phase changes so phase_transition fires exactly
--- once per real transition, never on a no-op assignment.
+-- Single chokepoint for phase changes. Plays the generic phase_transition
+-- stinger on every real change, except when entering RESULT — there the
+-- outcome-specific sting (victory if the hero died, defeat if the treasure
+-- was stolen) replaces it. state.outcome must already be set before
+-- transitioning to RESULT for the right sting to fire.
 local function set_phase(state, new_phase)
-    if state.phase ~= new_phase then
+    if state.phase == new_phase then
+        state.phase = new_phase
+        return
+    end
+    if new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_HERO_DEAD then
+        audio.play("victory_sting")
+    elseif new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_TREASURE_STOLEN then
+        audio.play("defeat_sting")
+    else
         audio.play("phase_transition")
     end
     state.phase = new_phase
