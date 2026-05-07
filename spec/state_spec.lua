@@ -4,6 +4,7 @@ local state = require("src.state")
 local dungeon = require("src.dungeon")
 local monster = require("src.monster")
 local grid = require("src.grid")
+local ai = require("src.ai")
 
 -- First n interior tiles (2..W-1, 2..H-1) that aren't the treasure for the
 -- given state. Stable per-seed so tests are deterministic.
@@ -131,6 +132,16 @@ describe("state", function()
             assert.are.equal(monster.GOBLIN, s.selected_monster_type)
         end)
 
+        it("clears placed walls and resets the tool to monster", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_wall(s, t.x, t.y)
+            state.select_tool(s, state.TOOL_WALL)
+            state.reset(s, 42)
+            assert.are.equal(state.TOOL_MONSTER, s.selected_tool)
+            assert.are.same({}, s.placed_walls)
+        end)
+
         it("clears the hero and outcome", function()
             local s = state.new(7)
             state.advance(s)
@@ -211,6 +222,152 @@ describe("state", function()
             local t = free_tiles(s, 1)[1]
             assert.is_true(state.try_place_monster(s, t.x, t.y))
             assert.are.equal(monster.ORC, s.monsters[1].type)
+        end)
+    end)
+
+    describe("tool selection", function()
+        it("starts with the monster tool selected", function()
+            local s = state.new(1)
+            assert.are.equal(state.TOOL_MONSTER, s.selected_tool)
+        end)
+
+        it("switches to the wall tool", function()
+            local s = state.new(1)
+            assert.is_true(state.select_tool(s, state.TOOL_WALL))
+            assert.are.equal(state.TOOL_WALL, s.selected_tool)
+        end)
+
+        it("rejects unknown tools and leaves the selection unchanged", function()
+            local s = state.new(1)
+            assert.is_false(state.select_tool(s, "trap"))
+            assert.are.equal(state.TOOL_MONSTER, s.selected_tool)
+        end)
+    end)
+
+    describe("wall placement", function()
+        it("places a wall on a valid floor tile", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            assert.is_true(state.try_place_wall(s, t.x, t.y))
+            assert.are.equal(dungeon.WALL, s.dungeon.grid[t.y][t.x])
+        end)
+
+        it("rejects placement on the perimeter", function()
+            local s = state.new(7)
+            assert.is_false(state.try_place_wall(s, 1, 1))
+        end)
+
+        it("rejects placement on the entrance", function()
+            local s = state.new(7)
+            assert.is_false(state.try_place_wall(s,
+                s.dungeon.entrance.x, s.dungeon.entrance.y))
+        end)
+
+        it("rejects placement on the treasure", function()
+            local s = state.new(7)
+            assert.is_false(state.try_place_wall(s,
+                s.dungeon.treasure.x, s.dungeon.treasure.y))
+        end)
+
+        it("rejects placement on a tile already occupied by a monster", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_monster(s, t.x, t.y)
+            assert.is_false(state.try_place_wall(s, t.x, t.y))
+        end)
+
+        it("rejects placement outside BUILD phase", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.advance(s)
+            assert.is_false(state.try_place_wall(s, t.x, t.y))
+        end)
+
+        it("rejects a wall that would disconnect entrance from treasure", function()
+            -- Build a 1-tile-wide neck around the entrance: walling every
+            -- floor neighbor of the door is illegal because entrance is
+            -- then sealed off.
+            local s = state.new(7)
+            local e = s.dungeon.entrance
+            local neighbors = {
+                { e.x + 1, e.y }, { e.x - 1, e.y },
+                { e.x, e.y + 1 }, { e.x, e.y - 1 },
+            }
+            local floor_neighbors = {}
+            for _, n in ipairs(neighbors) do
+                if s.dungeon.grid[n[2]] and s.dungeon.grid[n[2]][n[1]] == dungeon.FLOOR then
+                    table.insert(floor_neighbors, n)
+                end
+            end
+            -- Wall every floor neighbor except the last; the last one would
+            -- complete the seal and must be rejected.
+            for i = 1, #floor_neighbors - 1 do
+                local n = floor_neighbors[i]
+                assert.is_true(state.try_place_wall(s, n[1], n[2]))
+            end
+            local last = floor_neighbors[#floor_neighbors]
+            assert.is_false(state.try_place_wall(s, last[1], last[2]))
+        end)
+
+        it("rejects placement on an existing wall", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            assert.is_true(state.try_place_wall(s, t.x, t.y))
+            assert.is_false(state.try_place_wall(s, t.x, t.y))
+        end)
+    end)
+
+    describe("wall removal", function()
+        it("reverts a player-placed wall back to floor", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_wall(s, t.x, t.y)
+            assert.is_true(state.try_remove_wall(s, t.x, t.y))
+            assert.are.equal(dungeon.FLOOR, s.dungeon.grid[t.y][t.x])
+        end)
+
+        it("does not remove the perimeter wall", function()
+            local s = state.new(7)
+            assert.is_false(state.try_remove_wall(s, 1, 1))
+            assert.are.equal(dungeon.WALL, s.dungeon.grid[1][1])
+        end)
+
+        it("does not remove an empty floor tile", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            assert.is_false(state.try_remove_wall(s, t.x, t.y))
+        end)
+
+        it("rejects removal outside BUILD phase", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_wall(s, t.x, t.y)
+            state.advance(s)
+            assert.is_false(state.try_remove_wall(s, t.x, t.y))
+            assert.are.equal(dungeon.WALL, s.dungeon.grid[t.y][t.x])
+        end)
+    end)
+
+    describe("hero pathing around walls", function()
+        it("routes the hero around a player-placed wall", function()
+            -- Pick the midpoint of the natural A* path so the wall lands
+            -- well inside the room (not at the entrance neck) and a detour
+            -- definitely exists.
+            local s = state.new(7)
+            local original = ai.find_path(s.dungeon,
+                s.dungeon.entrance.x, s.dungeon.entrance.y,
+                s.dungeon.treasure.x, s.dungeon.treasure.y)
+            assert.is_not_nil(original)
+            local mid = original[math.floor(#original / 2)]
+            local wx, wy = mid.x, mid.y
+
+            assert.is_true(state.try_place_wall(s, wx, wy))
+            state.advance(s)
+            local path = state.hero_path(s)
+            assert.is_not_nil(path)
+            for _, p in ipairs(path) do
+                assert.is_false(p.x == wx and p.y == wy)
+            end
         end)
     end)
 

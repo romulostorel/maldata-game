@@ -21,8 +21,19 @@ M.PHASE_INVASION = "invasion"
 M.PHASE_RESULT   = "result"
 M.MAX_MONSTERS   = 3
 
+M.TOOL_MONSTER = "monster"
+M.TOOL_WALL    = "wall"
+
 M.OUTCOME_TREASURE_STOLEN = "treasure_stolen"
 M.OUTCOME_HERO_DEAD       = "hero_dead"
+
+-- Player-placed walls live in a set keyed by wall_key(x, y); the dungeon
+-- grid is updated in lockstep so A* sees them as impassable. Tracking which
+-- walls are player-placed (vs. the original perimeter) lets right-click
+-- only remove what the player actually built.
+local function wall_key(x, y)
+    return y * 100 + x
+end
 
 -- Auto-step cadence during invasion. Tweak here to change the default
 -- watch-the-run pacing.
@@ -41,7 +52,9 @@ function M.new(seed)
         dungeon = dungeon.generate(seed),
         phase = M.PHASE_BUILD,
         monsters = {},
+        placed_walls = {},
         selected_monster_type = monster.GOBLIN,
+        selected_tool = M.TOOL_MONSTER,
         hero = nil,
         outcome = nil,
         auto_step = true,
@@ -103,7 +116,9 @@ function M.reset(state, seed)
     state.rng = rand.new(seed)
     state.dungeon = dungeon.generate(seed)
     state.monsters = {}
+    state.placed_walls = {}
     state.selected_monster_type = monster.GOBLIN
+    state.selected_tool = M.TOOL_MONSTER
     state.hero = nil
     state.outcome = nil
     state.auto_step = true
@@ -112,6 +127,7 @@ function M.reset(state, seed)
 end
 
 local function tile_is_free(state, x, y)
+    if not state.dungeon.grid[y] then return false end
     if state.dungeon.grid[y][x] ~= dungeon.FLOOR then return false end
     if x == state.dungeon.entrance.x and y == state.dungeon.entrance.y then return false end
     if x == state.dungeon.treasure.x and y == state.dungeon.treasure.y then return false end
@@ -152,6 +168,55 @@ end
 function M.select_monster_type(state, type_key)
     if not monster.TYPES[type_key] then return false end
     state.selected_monster_type = type_key
+    return true
+end
+
+function M.select_tool(state, tool)
+    if tool ~= M.TOOL_MONSTER and tool ~= M.TOOL_WALL then return false end
+    state.selected_tool = tool
+    return true
+end
+
+-- Connectivity guard: simulating the wall as an extra A* blocker (instead of
+-- mutating the grid) keeps this pure. Monsters are *not* counted as blockers
+-- here — heroes can kill them, so a wall layout that funnels through a
+-- monster is still legal.
+local function path_survives_wall(state, x, y)
+    local function blocker(bx, by)
+        return bx == x and by == y
+    end
+    return ai.find_path(state.dungeon,
+        state.dungeon.entrance.x, state.dungeon.entrance.y,
+        state.dungeon.treasure.x, state.dungeon.treasure.y,
+        blocker) ~= nil
+end
+
+function M.can_place_wall(state, x, y)
+    if state.phase ~= M.PHASE_BUILD then return false end
+    if not tile_is_free(state, x, y) then return false end
+    return path_survives_wall(state, x, y)
+end
+
+function M.try_place_wall(state, x, y)
+    if not M.can_place_wall(state, x, y) then return false end
+    state.dungeon.grid[y][x] = dungeon.WALL
+    state.placed_walls[wall_key(x, y)] = true
+    audio.play("monster_place")
+    return true
+end
+
+-- Right-click on a placed wall reverts it. Only player-placed walls are
+-- removable; the perimeter stays.
+function M.can_remove_wall(state, x, y)
+    if state.phase ~= M.PHASE_BUILD then return false end
+    return state.placed_walls[wall_key(x, y)] == true
+end
+
+function M.try_remove_wall(state, x, y)
+    if not M.can_remove_wall(state, x, y) then return false end
+    state.dungeon.grid[y][x] = dungeon.FLOOR
+    state.placed_walls[wall_key(x, y)] = nil
+    audio.play("monster_remove")
     return true
 end
 

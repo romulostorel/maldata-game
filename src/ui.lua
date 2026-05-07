@@ -74,9 +74,12 @@ function M.draw_hud(game)
 
     if game.phase == state.PHASE_BUILD then
         love.graphics.setColor(palette.bone)
+        local sel = game.selected_tool == state.TOOL_WALL
+            and "wall"
+            or game.selected_monster_type
         love.graphics.print(
-            ("[1] goblin   [2] orc   [3] slime    selected: %s    placed: %d/%d")
-                :format(game.selected_monster_type, #game.monsters, state.MAX_MONSTERS),
+            ("[1] goblin   [2] orc   [3] slime   [4] wall    selected: %s    placed: %d/%d")
+                :format(sel, #game.monsters, state.MAX_MONSTERS),
             8, 24)
     elseif game.phase == state.PHASE_INVASION and game.hero then
         love.graphics.setColor(palette.bone)
@@ -91,7 +94,7 @@ function M.draw_hud(game)
     love.graphics.setColor(palette.stone_light)
     local hotkeys
     if game.phase == state.PHASE_BUILD then
-        hotkeys = "[CLICK] place    [SPACE] start invasion    [R] new dungeon    [ESC] quit"
+        hotkeys = "[LMB] place  [RMB] remove  [SPACE] start invasion  [R] new dungeon  [ESC] quit"
     elseif game.phase == state.PHASE_INVASION then
         hotkeys = "[SPACE] pause/resume    [.] step    [R] new run    [ESC] quit"
     else

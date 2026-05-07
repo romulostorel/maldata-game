@@ -123,7 +123,13 @@ function M.draw_build_cursor(game)
     if not tx then return end
 
     local px, py = grid.tile_to_pixel(tx, ty)
-    local ok = state.can_place_monster(game, tx, ty)
+    local ok
+    if game.selected_tool == state.TOOL_WALL then
+        ok = state.can_place_wall(game, tx, ty)
+            or state.can_remove_wall(game, tx, ty)
+    else
+        ok = state.can_place_monster(game, tx, ty)
+    end
     love.graphics.setColor(ok and COLOR_CURSOR_OK or COLOR_CURSOR_BAD)
     love.graphics.rectangle("fill", px, py, grid.TILE, grid.TILE)
     love.graphics.setColor(1, 1, 1, 1)
