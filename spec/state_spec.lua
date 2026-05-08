@@ -534,6 +534,228 @@ describe("state", function()
         end)
     end)
 
+    describe("orc corpse passive", function()
+        it("spawns a corpse on the tile when an orc dies", function()
+            local s = state.new(7)
+            state.advance(s)
+            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+            local orc = inject_monster(s, monster.ORC, mx, my)
+            orc.hp = 1
+            state.step_invasion(s)
+            assert.is_false(orc.alive)
+            assert.are.equal(1, #s.corpses)
+            assert.are.equal(mx, s.corpses[1].x)
+            assert.are.equal(my, s.corpses[1].y)
+        end)
+
+        it("does not spawn a corpse for non-orc kills", function()
+            local s = state.new(7)
+            state.advance(s)
+            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+            local g = inject_monster(s, monster.GOBLIN, mx, my); g.hp = 1
+            state.step_invasion(s)
+            assert.is_false(g.alive)
+            assert.are.equal(0, #s.corpses)
+        end)
+
+        it("expires after ORC_CORPSE_TURNS future ticks", function()
+            -- Corpse blocks the tick it spawned in plus ORC_CORPSE_TURNS - 1
+            -- following ticks under the snapshot rule (decrement skips the
+            -- spawn tick), then is removed at the end of tick N+ORC_CORPSE_TURNS.
+            local s = state.new(7)
+            state.advance(s)
+            s.hero_queue = {}  -- isolate this hero from queue spawns blocking it
+            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+            local orc = inject_monster(s, monster.ORC, mx, my); orc.hp = 1
+            state.step_invasion(s)
+            assert.are.equal(1, #s.corpses)
+            for _ = 1, state.ORC_CORPSE_TURNS - 1 do
+                if s.phase == state.PHASE_RESULT then break end
+                state.step_invasion(s)
+                assert.are.equal(1, #s.corpses)
+            end
+            if s.phase == state.PHASE_INVASION then
+                state.step_invasion(s)
+                assert.are.equal(0, #s.corpses)
+            end
+        end)
+
+        it("blocks hero pathing while it persists", function()
+            -- Place an orc on the natural path midpoint, kill it, and verify
+            -- the next tick's hero_path detours around the corpse tile.
+            local s = state.new(7)
+            local original = ai.find_path(s.dungeon,
+                s.dungeon.entrance.x, s.dungeon.entrance.y,
+                s.dungeon.treasure.x, s.dungeon.treasure.y)
+            assert.is_not_nil(original)
+            state.advance(s)
+            local h = s.heroes[1]
+            local nx, ny = first_floor_neighbor(s, h.x, h.y)
+            local orc = inject_monster(s, monster.ORC, nx, ny); orc.hp = 1
+            state.step_invasion(s)
+            assert.is_false(orc.alive)
+            assert.are.equal(1, #s.corpses)
+            local cx, cy = s.corpses[1].x, s.corpses[1].y
+            local path = state.hero_path(s, h)
+            if path then
+                for _, p in ipairs(path) do
+                    assert.is_false(p.x == cx and p.y == cy)
+                end
+            end
+        end)
+
+        it("clears corpses on advance back to build (retry)", function()
+            local s = state.new(7)
+            state.advance(s)
+            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+            local orc = inject_monster(s, monster.ORC, mx, my); orc.hp = 1
+            state.step_invasion(s)
+            assert.is_true(#s.corpses > 0)
+            -- Force result, then back to build.
+            s.outcome = state.OUTCOME_HERO_DEAD
+            s.phase   = state.PHASE_RESULT
+            state.advance(s)
+            assert.are.equal(state.PHASE_BUILD, s.phase)
+            assert.are.equal(0, #s.corpses)
+        end)
+
+        it("clears corpses on reset", function()
+            local s = state.new(7)
+            state.advance(s)
+            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+            local orc = inject_monster(s, monster.ORC, mx, my); orc.hp = 1
+            state.step_invasion(s)
+            assert.is_true(#s.corpses > 0)
+            state.reset(s, 99)
+            assert.are.equal(0, #s.corpses)
+        end)
+
+        it("clears corpses when entering a fresh invasion", function()
+            local s = state.new(7)
+            -- Inject a stray corpse manually as if from a prior wave.
+            s.corpses = { { x = 3, y = 3, ttl = 5 } }
+            state.advance(s)
+            assert.are.equal(0, #s.corpses)
+        end)
+    end)
+
+    describe("slime split passive", function()
+        it("spawns SLIME_SPLIT_COUNT minis at cardinal-adjacent free tiles", function()
+            local s = state.new(7)
+            state.advance(s)
+            local h = s.heroes[1]
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            local slime = inject_monster(s, monster.SLIME, mx, my); slime.hp = 1
+            local before = #s.monsters
+            state.step_invasion(s)
+            assert.is_false(slime.alive)
+            -- New minis added to monsters list.
+            assert.is_true(#s.monsters > before)
+            -- Up to SLIME_SPLIT_COUNT minis adjacent to the dead slime tile.
+            local minis = 0
+            for _, m in ipairs(s.monsters) do
+                if m.is_mini and m.alive then
+                    minis = minis + 1
+                    assert.are.equal(1, math.abs(m.x - mx) + math.abs(m.y - my))
+                end
+            end
+            assert.is_true(minis > 0)
+            assert.is_true(minis <= state.SLIME_SPLIT_COUNT)
+        end)
+
+        it("does NOT split when a mini-slime dies (no recursive chain)", function()
+            local s = state.new(7)
+            state.advance(s)
+            local h = s.heroes[1]
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            -- Inject a mini-slime directly so the kill bypasses the parent split.
+            local mini = monster.new_mini_slime(mx, my); mini.hp = 1
+            table.insert(s.monsters, mini)
+            local count_before = #s.monsters
+            state.step_invasion(s)
+            assert.is_false(mini.alive)
+            -- No new monsters added past the dead mini.
+            assert.are.equal(count_before, #s.monsters)
+        end)
+
+        it("does not spawn minis on entrance, treasure, or walls", function()
+            -- Surround the slime with all-blocked neighbors. Easiest: place
+            -- the slime adjacent to the perimeter wall AND the entrance, so
+            -- two of four neighbors are wall/entrance. The other two (if
+            -- floor) would still spawn — so we only assert "spawns no more
+            -- than the legal directions". This test mostly guards the
+            -- predicate by checking no mini lands on illegal tiles.
+            local s = state.new(7)
+            state.advance(s)
+            local h = s.heroes[1]
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            local slime = inject_monster(s, monster.SLIME, mx, my); slime.hp = 1
+            state.step_invasion(s)
+            for _, m in ipairs(s.monsters) do
+                if m.is_mini and m.alive then
+                    -- Not entrance, not treasure.
+                    assert.is_false(m.x == s.dungeon.entrance.x and m.y == s.dungeon.entrance.y)
+                    assert.is_false(m.x == s.dungeon.treasure.x and m.y == s.dungeon.treasure.y)
+                    -- Not on a wall tile.
+                    assert.are.equal(dungeon.FLOOR, s.dungeon.grid[m.y][m.x])
+                end
+            end
+        end)
+
+        it("does not let a freshly spawned mini-slime swing on its spawn tick", function()
+            -- The hero kills the slime in tick T. Minis spawn this tick.
+            -- They must not appear in the monster turn snapshot, so the
+            -- hero's HP after the tick should reflect at most the parent
+            -- slime's pre-death swing (already dead → 0 swings) plus any
+            -- pre-existing monsters' swings (none here). With only the
+            -- slime adjacent and pre-killed, hero HP must be unchanged.
+            local s = state.new(7)
+            state.advance(s)
+            s.hero_queue = {}
+            local h = s.heroes[1]
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            local slime = inject_monster(s, monster.SLIME, mx, my); slime.hp = 1
+            local hp_before = h.hp
+            state.step_invasion(s)
+            assert.are.equal(hp_before, h.hp)
+        end)
+    end)
+
+    describe("goblin cluster passive", function()
+        it("a clustered goblin swings for atk + 1 per adjacent goblin", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.hero_queue = {}
+            local h = s.heroes[1]
+            local nx, ny = first_floor_neighbor(s, h.x, h.y)
+            local lead = inject_monster(s, monster.GOBLIN, nx, ny)
+            -- Try to add a cluster mate at a different cardinal neighbor of the lead.
+            local dirs = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
+            local mate
+            for _, d in ipairs(dirs) do
+                local cx, cy = nx + d[1], ny + d[2]
+                if not (cx == h.x and cy == h.y)
+                   and not (cx == s.dungeon.entrance.x and cy == s.dungeon.entrance.y)
+                   and not (cx == s.dungeon.treasure.x and cy == s.dungeon.treasure.y)
+                   and s.dungeon.grid[cy] and s.dungeon.grid[cy][cx] == dungeon.FLOOR then
+                    mate = inject_monster(s, monster.GOBLIN, cx, cy)
+                    break
+                end
+            end
+            assert.is_not_nil(mate, "could not place a cluster mate for this seed")
+
+            local hp_before = h.hp
+            state.step_invasion(s)
+            -- One step:
+            --   hero attacks lead (still alive after, hero.atk < goblin.hp)
+            --   lead swings for atk + 1 (mate adjacent)
+            --   mate swings (only adjacent to lead; no hero in mate's range)
+            -- So hero loses lead.atk + GOBLIN_CLUSTER_BONUS HP.
+            local expected_loss = monster.TYPES[monster.GOBLIN].atk + monster.GOBLIN_CLUSTER_BONUS
+            assert.are.equal(hp_before - expected_loss, h.hp)
+        end)
+    end)
+
     describe("session counters", function()
         it("starts at zero wins/losses", function()
             local s = state.new(1)

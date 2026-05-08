@@ -29,14 +29,15 @@ end
 -- Combat → animation+effects+audio bridge. state.lua emits these events; we
 -- stamp the entity with a timestamp the renderer reads to pick attack/death
 -- frames, spawn matching one-shot visual effects (sparks, scatter, damage
--- number), and route the matching SFX.
-local function on_combat_event(kind, attacker, target)
+-- number), and route the matching SFX. The `damage` arg on "attack" carries
+-- the actual dealt damage (passive bonuses included), not attacker.atk.
+local function on_combat_event(kind, attacker, target, damage)
     local now = love.timer.getTime()
     if kind == "attack" then
         attacker._attack_at = now
         local color = target.class and palette.blood or palette.paper
         effects.spawn_hit(target.x, target.y)
-        effects.spawn_damage(target.x, target.y, attacker.atk, color)
+        effects.spawn_damage(target.x, target.y, damage or attacker.atk, color)
         if attacker.class then
             audio.play("hero_attack_" .. attacker.class)
         elseif attacker.type then
@@ -95,6 +96,7 @@ function love.draw()
     love.graphics.clear(BG_R, BG_G, BG_B)
 
     render.draw_dungeon(game.dungeon)
+    render.draw_corpses(game.corpses)
     render.draw_monsters(game.monsters)
     render.draw_path(game)
     render.draw_heroes(game.heroes)

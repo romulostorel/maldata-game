@@ -43,6 +43,16 @@ M.TOOL_WALL    = "wall"
 M.OUTCOME_TREASURE_STOLEN = "treasure_stolen"
 M.OUTCOME_HERO_DEAD       = "hero_dead"
 
+-- Orc passive: a slain orc leaves a corpse that blocks its tile for this
+-- many invasion ticks. Decremented at the END of each tick, so a corpse
+-- born in tick N blocks tick N+1 and N+2, then is cleared at the end of
+-- N+2 (tile free again from tick N+3 onward).
+M.ORC_CORPSE_TURNS = 2
+
+-- Slime passive: number of mini-slimes spawned on death. Cardinal-adjacent
+-- free tiles only; if fewer than this are free, only that many spawn.
+M.SLIME_SPLIT_COUNT = 2
+
 -- Player-placed walls live in a set keyed by wall_key(x, y); the dungeon
 -- grid is updated in lockstep so A* sees them as impassable. Tracking which
 -- walls are player-placed (vs. the original perimeter) lets right-click
@@ -87,6 +97,10 @@ function M.new(seed)
         heroes = {},      -- alive (and recently dead) heroes inside the dungeon
         hero_queue = {},  -- pre-rolled heroes still waiting to enter
         wave_preview = {}, -- next wave's heroes, shown during BUILD
+        -- Orc-death corpses: { x, y, ttl } entries that block pathing for
+        -- ORC_CORPSE_TURNS ticks. Lives only during INVASION; cleared on
+        -- advance back to BUILD and on reset.
+        corpses = {},
         outcome = nil,
         auto_step = true,
         step_timer = 0,
@@ -138,6 +152,7 @@ function M.advance(state)
     if next_phase == M.PHASE_INVASION then
         state.heroes = {}
         state.hero_queue = {}
+        state.corpses = {}
         -- Promote the pre-rolled wave: first hero takes the entrance, the
         -- rest sit in the queue and step in one per tick. Same identities
         -- the player saw during BUILD — no re-roll here.
@@ -155,6 +170,7 @@ function M.advance(state)
     elseif next_phase == M.PHASE_BUILD then
         state.heroes = {}
         state.hero_queue = {}
+        state.corpses = {}
         state.outcome = nil
         -- Retry semantics: dungeon stays the same, but the build is wiped
         -- so the player gets a full budget back to react to the lesson.
@@ -183,6 +199,7 @@ function M.reset(state, seed)
     state.num_heroes = M.DEFAULT_NUM_HEROES
     state.heroes = {}
     state.hero_queue = {}
+    state.corpses = {}
     state.outcome = nil
     state.auto_step = true
     state.step_timer = 0
@@ -302,8 +319,9 @@ function M.try_remove_wall(state, x, y)
 end
 
 -- Combined blocker for hero pathfinding: alive monsters AND alive peer
--- heroes (excluding `self`) block movement. Without the peer block, heroes
--- would happily step onto each other's tiles; the queue/spawn logic
+-- heroes (excluding `self`) block movement. Orc corpses are also blockers
+-- — that is the orc's whole death-passive payoff. Without the peer block,
+-- heroes would happily step onto each other's tiles; the queue/spawn logic
 -- assumes the entrance can hold at most one hero at a time.
 local function path_blocker(state, self_hero)
     return function(x, y)
@@ -315,7 +333,60 @@ local function path_blocker(state, self_hero)
                 return true
             end
         end
+        for _, c in ipairs(state.corpses) do
+            if c.x == x and c.y == y then return true end
+        end
         return false
+    end
+end
+
+-- Spawn-tile predicate for slime split: a tile is eligible if it is FLOOR,
+-- not entrance/treasure, not occupied by a live monster or hero, and not
+-- held by an orc corpse. Stricter than tile_is_free (which is build-phase)
+-- because heroes and corpses only exist mid-invasion.
+local function is_spawn_tile(state, x, y)
+    if not state.dungeon.grid[y] then return false end
+    if state.dungeon.grid[y][x] ~= dungeon.FLOOR then return false end
+    if x == state.dungeon.entrance.x and y == state.dungeon.entrance.y then return false end
+    if x == state.dungeon.treasure.x and y == state.dungeon.treasure.y then return false end
+    for _, m in ipairs(state.monsters) do
+        if m.alive and m.x == x and m.y == y then return false end
+    end
+    for _, h in ipairs(state.heroes) do
+        if h.alive and h.x == x and h.y == y then return false end
+    end
+    for _, c in ipairs(state.corpses) do
+        if c.x == x and c.y == y then return false end
+    end
+    return true
+end
+
+-- Slime split: spawn up to SLIME_SPLIT_COUNT mini-slimes on cardinal-adjacent
+-- free tiles. Direction order is fixed (up/right/down/left) so the spawn
+-- pattern is deterministic per seed even though no rng is consumed.
+local SPLIT_DIRS = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
+local function spawn_split_slimes(state, parent)
+    local spawned = 0
+    for _, d in ipairs(SPLIT_DIRS) do
+        if spawned >= M.SLIME_SPLIT_COUNT then break end
+        local nx, ny = parent.x + d[1], parent.y + d[2]
+        if is_spawn_tile(state, nx, ny) then
+            table.insert(state.monsters, monster.new_mini_slime(nx, ny))
+            spawned = spawned + 1
+        end
+    end
+end
+
+-- Per-type death payoff. Orc → corpse on its tile; slime (non-mini) →
+-- splits into mini-slimes. Mini-slimes and goblins have no death effect.
+-- Called immediately after a hero kills the monster, so subsequent path
+-- queries this tick already see the new blockers/spawns.
+local function on_monster_death(state, m)
+    if m.type == monster.ORC then
+        table.insert(state.corpses,
+            { x = m.x, y = m.y, ttl = M.ORC_CORPSE_TURNS })
+    elseif m.type == monster.SLIME and not m.is_mini then
+        spawn_split_slimes(state, m)
     end
 end
 
@@ -380,6 +451,18 @@ end
 function M.step_invasion(state, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
 
+    -- Snapshot monsters BEFORE the hero turn. Mini-slimes pushed during
+    -- hero swings (slime split) land in state.monsters but NOT in the
+    -- snapshot, so they wait one full tick before acting — same fairness
+    -- contract as a queued hero waiting on the entrance for a turn.
+    local pre_monsters = {}
+    for i, m in ipairs(state.monsters) do pre_monsters[i] = m end
+
+    -- Snapshot corpses so a corpse spawned this tick is not decremented
+    -- until next tick; it should block for ORC_CORPSE_TURNS *future* ticks.
+    local pre_corpses = {}
+    for i, c in ipairs(state.corpses) do pre_corpses[i] = c end
+
     -- Hero turns: each alive hero attacks the first monster in range, or
     -- steps along its own path. Iterating a snapshot keeps the order
     -- deterministic even if state.heroes is mutated mid-loop.
@@ -389,11 +472,12 @@ function M.step_invasion(state, on_event)
         if h.alive then
             local target = find_monster_in_range(state, h)
             if target then
-                combat.attack(h, target)
+                local dmg = combat.attack(h, target)
                 if on_event then
-                    on_event("attack", h, target)
+                    on_event("attack", h, target, dmg)
                     if not target.alive then on_event("death", target) end
                 end
+                if not target.alive then on_monster_death(state, target) end
             else
                 local path = M.hero_path(state, h)
                 if path and #path > 0 then
@@ -412,18 +496,32 @@ function M.step_invasion(state, on_event)
     end
 
     -- Monster turn: each monster swings at the first alive hero in range.
-    -- A monster only retaliates against one hero per tick, even if multiple
-    -- are in range — matches the v1 1:1 combat granularity.
-    for _, m in ipairs(state.monsters) do
+    -- Iterates the pre-hero snapshot so freshly split mini-slimes don't
+    -- swing the same tick they spawn. Goblin cluster bonus is computed at
+    -- swing time against state.monsters (post-hero), so a goblin loses its
+    -- bonus the moment a neighbor falls.
+    for _, m in ipairs(pre_monsters) do
         if m.alive then
             local target = find_hero_in_range(state, m)
             if target then
-                combat.attack(m, target)
+                local dmg = combat.attack(m, target,
+                    monster.effective_atk(m, state.monsters))
                 if on_event then
-                    on_event("attack", m, target)
+                    on_event("attack", m, target, dmg)
                     if not target.alive then on_event("death", target) end
                 end
             end
+        end
+    end
+
+    -- Decrement TTL on corpses that existed at the start of this tick. New
+    -- corpses (orc died this tick) keep their fresh TTL until next tick.
+    for _, c in ipairs(pre_corpses) do
+        c.ttl = c.ttl - 1
+    end
+    for i = #state.corpses, 1, -1 do
+        if state.corpses[i].ttl <= 0 then
+            table.remove(state.corpses, i)
         end
     end
 

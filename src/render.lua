@@ -88,9 +88,35 @@ function M.draw_monsters(monsters)
         local img   = pick_image(m, anims, "idle")
         if img then
             local px, py = grid.tile_to_pixel(m.x, m.y)
-            love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
+            -- Mini-slimes (slime split) render at 70% scale to read as "smaller
+            -- threats" without needing a separate sprite set. 24×24 base sprite
+            -- centered inside the tile via SPRITE_INSET; scaled draw stays
+            -- centered by using the matching half-pixel offset.
+            if m.is_mini then
+                local s = 0.7
+                local ox = (24 * (1 - s)) / 2
+                love.graphics.draw(img,
+                    px + SPRITE_INSET + ox, py + SPRITE_INSET + ox,
+                    0, s, s)
+            else
+                love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
+            end
         end
     end
+end
+
+-- Orc-corpse marker: a faded blood splotch that persists past the orc's
+-- death animation so the player sees the tile is still blocked. Drawn as a
+-- plain rect — no sprite asset needed for the v1.5 readout.
+function M.draw_corpses(corpses)
+    if not corpses then return end
+    for _, c in ipairs(corpses) do
+        local px, py = grid.tile_to_pixel(c.x, c.y)
+        love.graphics.setColor(0.45, 0.10, 0.10, 0.55)
+        love.graphics.rectangle("fill",
+            px + 6, py + 6, grid.TILE - 12, grid.TILE - 12)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function M.draw_path(game)

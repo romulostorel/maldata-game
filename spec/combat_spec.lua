@@ -76,5 +76,19 @@ describe("combat", function()
             assert.are.same(snapshot,
                 { hp = a.hp, atk = a.atk, range = a.range, alive = a.alive })
         end)
+
+        it("uses the explicit damage override when provided", function()
+            local a = actor(0, 0, 3)
+            local t = actor(0, 0); t.hp = 10
+            combat.attack(a, t, 7)
+            assert.are.equal(3, t.hp)
+        end)
+
+        it("returns the dealt damage (passive-aware caller can route it on)", function()
+            local a = actor(0, 0, 3)
+            local t = actor(0, 0); t.hp = 10
+            assert.are.equal(3, combat.attack(a, t))
+            assert.are.equal(5, combat.attack(a, t, 5))
+        end)
     end)
 end)
