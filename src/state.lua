@@ -156,6 +156,16 @@ function M.advance(state)
         state.heroes = {}
         state.hero_queue = {}
         state.outcome = nil
+        -- Retry semantics: dungeon stays the same, but the build is wiped
+        -- so the player gets a full budget back to react to the lesson.
+        -- The rng keeps moving (no reset) so each retry rolls a new wave.
+        state.monsters = {}
+        for k in pairs(state.placed_walls) do
+            local y = math.floor(k / 100)
+            local x = k - y * 100
+            state.dungeon.grid[y][x] = dungeon.FLOOR
+        end
+        state.placed_walls = {}
         roll_wave(state)
     end
 

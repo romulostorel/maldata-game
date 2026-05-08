@@ -488,6 +488,52 @@ describe("state", function()
         end)
     end)
 
+    describe("retry (advance from result back to build)", function()
+        it("clears placed monsters", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            state.try_place_monster(s, t.x, t.y)
+            state.advance(s); state.advance(s); state.advance(s)
+            assert.are.equal(state.PHASE_BUILD, s.phase)
+            assert.are.equal(0, #s.monsters)
+        end)
+
+        it("clears placed walls and reverts the grid back to floor", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            assert.is_true(state.try_place_wall(s, t.x, t.y))
+            state.advance(s); state.advance(s); state.advance(s)
+            assert.are.same({}, s.placed_walls)
+            assert.are.equal(dungeon.FLOOR, s.dungeon.grid[t.y][t.x])
+        end)
+
+        it("restores full budget", function()
+            local s = state.new(7)
+            local tiles = free_tiles(s, 3)
+            for _, t in ipairs(tiles) do
+                state.try_place_monster(s, t.x, t.y)
+            end
+            state.try_place_wall(s, free_tiles(s, 4)[4].x, free_tiles(s, 4)[4].y)
+            assert.is_true(state.spent_budget(s) > 0)
+            state.advance(s); state.advance(s); state.advance(s)
+            assert.are.equal(0, state.spent_budget(s))
+            assert.are.equal(state.BUDGET, state.remaining_budget(s))
+        end)
+
+        it("preserves the dungeon layout (same entrance + treasure + grid object)", function()
+            local s = state.new(7)
+            local original_grid = s.dungeon.grid
+            local ex, ey = s.dungeon.entrance.x, s.dungeon.entrance.y
+            local tx, ty = s.dungeon.treasure.x, s.dungeon.treasure.y
+            state.advance(s); state.advance(s); state.advance(s)
+            assert.are.equal(original_grid, s.dungeon.grid)
+            assert.are.equal(ex, s.dungeon.entrance.x)
+            assert.are.equal(ey, s.dungeon.entrance.y)
+            assert.are.equal(tx, s.dungeon.treasure.x)
+            assert.are.equal(ty, s.dungeon.treasure.y)
+        end)
+    end)
+
     describe("session counters", function()
         it("starts at zero wins/losses", function()
             local s = state.new(1)
