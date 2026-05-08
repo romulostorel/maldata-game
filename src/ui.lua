@@ -191,11 +191,38 @@ local function draw_button(btn, label, hovered, hint_key, font)
     -- Tiny key hint above the button so the player sees both the click
     -- target and the hotkey at the same glance.
     if hint_key then
-        love.graphics.setColor(palette.stone_light)
+        love.graphics.setColor(palette.bone)
         local hw = font:getWidth(hint_key)
         love.graphics.print(hint_key, btn.x + (btn.w - hw) / 2, btn.y - 16)
     end
 end
+
+-- Stat chip: filled rect in a dimmed copy of the accent color, 1 px border
+-- in the accent itself, paper-colored label centered. Used for the W/L
+-- session counters on the result panel.
+local function draw_chip(x, y, w, h, label, accent, font)
+    love.graphics.setColor(palette.darken(accent, 0.7))
+    love.graphics.rectangle("fill", x, y, w, h)
+    love.graphics.setColor(accent)
+    love.graphics.rectangle("line", x + 0.5, y + 0.5, w - 1, h - 1)
+
+    local scale = 1.5
+    local tw = font:getWidth(label) * scale
+    local th = font:getHeight() * scale
+    love.graphics.setColor(palette.paper)
+    love.graphics.print(label,
+        x + (w - tw) / 2, y + (h - th) / 2, 0, scale, scale)
+end
+
+-- W/L chip layout. Two 100×32 chips centered horizontally with a 60 px
+-- gap, sitting between the heroes-defeated label (~y=290) and the action
+-- buttons (y=380).
+local CHIP_W, CHIP_H = 100, 32
+local CHIP_GAP = 60
+local CHIP_Y = 318
+
+local CHIP_W_COLOR = palette.lighten(palette.moss, 0.15)
+local CHIP_L_COLOR = palette.lighten(palette.blood, 0.10)
 
 function M.draw_result(game)
     if game.phase ~= state.PHASE_RESULT then
@@ -204,7 +231,9 @@ function M.draw_result(game)
         return
     end
 
-    love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.65)
+    -- Heavier overlay (was 0.65) so the dungeon doesn't compete with the
+    -- panel for attention.
+    love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.85)
     love.graphics.rectangle("fill", 0, 0,
         love.graphics.getWidth(), love.graphics.getHeight())
 
@@ -228,21 +257,30 @@ function M.draw_result(game)
     love.graphics.setColor(color)
     local title_scale = 3
     local tw = font:getWidth(title) * title_scale
-    love.graphics.print(title, (W - tw) / 2, 200, 0, title_scale, title_scale)
+    love.graphics.print(title, (W - tw) / 2, 188, 0, title_scale, title_scale)
 
-    local summary = ("%d / %d heroes defeated"):format(
-        count_defeated(game.heroes), game.num_heroes)
-    local sum_scale = 1.5
-    local sw = font:getWidth(summary) * sum_scale
-    love.graphics.setColor(palette.bone)
-    love.graphics.print(summary, (W - sw) / 2, 270, 0, sum_scale, sum_scale)
+    -- Big focal stat: "X / Y" in paper at scale 2.5, then a small
+    -- "heroes defeated" caption right under it. The number is the eye
+    -- target; the caption is just context.
+    local big = ("%d / %d"):format(count_defeated(game.heroes), game.num_heroes)
+    local big_scale = 2.5
+    local bw = font:getWidth(big) * big_scale
+    love.graphics.setColor(palette.paper)
+    love.graphics.print(big, (W - bw) / 2, 240, 0, big_scale, big_scale)
 
-    local sess = ("Session: %d W / %d L"):format(
-        game.session.wins, game.session.losses)
-    local sess_scale = 1.5
-    local ssw = font:getWidth(sess) * sess_scale
+    local cap = "heroes defeated"
+    local cw = font:getWidth(cap)
     love.graphics.setColor(palette.stone_light)
-    love.graphics.print(sess, (W - ssw) / 2, 305, 0, sess_scale, sess_scale)
+    love.graphics.print(cap, (W - cw) / 2, 285)
+
+    -- W/L chips with semantic colors so the player reads "good thing /
+    -- bad thing" before reading the numbers.
+    local total_w = CHIP_W * 2 + CHIP_GAP
+    local chip_x  = math.floor((W - total_w) / 2)
+    draw_chip(chip_x, CHIP_Y, CHIP_W, CHIP_H,
+        ("%d W"):format(game.session.wins), CHIP_W_COLOR, font)
+    draw_chip(chip_x + CHIP_W + CHIP_GAP, CHIP_Y, CHIP_W, CHIP_H,
+        ("%d L"):format(game.session.losses), CHIP_L_COLOR, font)
 
     local mx, my = love.mouse.getPosition()
 
