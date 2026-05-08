@@ -87,6 +87,7 @@ function love.draw()
     ui.draw_hp_bars(game)
     ui.draw_hud(game)
     ui.draw_result(game)
+    ui.draw_tutorial(game)
 
     if show_palette then palette.draw_debug() end
     if show_sprite_base then sprite_base.draw_debug() end
@@ -95,6 +96,7 @@ function love.draw()
 end
 
 function love.keypressed(key)
+    ui.dismiss_tutorial()
     if key == "escape" then
         love.event.quit()
     elseif key == "f1" then
@@ -126,6 +128,8 @@ end
 function love.mousepressed(x, y, button)
     -- Left = place / confirm, right = undo placement. Anything else ignored.
     if button ~= 1 and button ~= 2 then return end
+
+    ui.dismiss_tutorial()
 
     if show_audio then
         if button == 1 then audio_debug.mousepressed(x, y, button) end

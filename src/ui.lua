@@ -30,6 +30,11 @@ local PANEL = { x = 160, y = 160, w = 480, h = 280 }
 -- panel isn't drawn, so re-entering the panel can fire ui_hover again.
 local was_restart_hovered = false
 
+-- One-shot tutorial overlay. Set to true on the first input event and
+-- never reset within a session (intentional — state.reset / R should not
+-- pop the tutorial back open).
+local tutorial_dismissed = false
+
 local function draw_bar(entity, color)
     local px, py = grid.tile_to_pixel(entity.x, entity.y)
     local bar_x = math.floor(px + (grid.TILE - BAR_W) / 2)
@@ -218,6 +223,65 @@ end
 function M.is_restart_clicked(mx, my)
     return mx >= RESTART_BTN.x and mx <= RESTART_BTN.x + RESTART_BTN.w
        and my >= RESTART_BTN.y and my <= RESTART_BTN.y + RESTART_BTN.h
+end
+
+-- First-boot tutorial: drawn over the build phase until any input arrives.
+-- Inverts the usual roguelike framing ("you are the dungeon, not the hero")
+-- and shows the controls. Hidden during invasion/result, and once dismissed
+-- it stays gone for the rest of the session — including across R/new-dungeon.
+local TUTORIAL_PANEL = { x = 160, y = 160, w = 480, h = 280 }
+
+function M.draw_tutorial(game)
+    if tutorial_dismissed then return end
+    if game.phase ~= state.PHASE_BUILD then return end
+
+    love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.70)
+    love.graphics.rectangle("fill", 0, 0,
+        love.graphics.getWidth(), love.graphics.getHeight())
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(assets.ui.panel, TUTORIAL_PANEL.x, TUTORIAL_PANEL.y)
+
+    local font = love.graphics.getFont()
+    local W = love.graphics.getWidth()
+
+    local title = "WELCOME TO THE DUNGEON"
+    local title_scale = 2
+    local tw = font:getWidth(title) * title_scale
+    love.graphics.setColor(palette.ember)
+    love.graphics.print(title, (W - tw) / 2, TUTORIAL_PANEL.y + 24,
+        0, title_scale, title_scale)
+
+    local body = {
+        "You ARE the dungeon. A wave of heroes invades through",
+        "the door — your monsters and walls must stop them",
+        "from reaching the throne.",
+        "",
+        "1 / 2 / 3   pick a monster",
+        "4           switch to wall tool",
+        "LMB         place    RMB    remove",
+        "SPACE       launch invasion",
+    }
+    love.graphics.setColor(palette.bone)
+    for i, line in ipairs(body) do
+        local lw = font:getWidth(line)
+        love.graphics.print(line, (W - lw) / 2, TUTORIAL_PANEL.y + 80 + (i - 1) * 16)
+    end
+
+    local hint = "[click or press any key to dismiss]"
+    love.graphics.setColor(palette.stone_light)
+    local hw = font:getWidth(hint)
+    love.graphics.print(hint, (W - hw) / 2, TUTORIAL_PANEL.y + TUTORIAL_PANEL.h - 24)
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function M.dismiss_tutorial()
+    tutorial_dismissed = true
+end
+
+function M.tutorial_visible()
+    return not tutorial_dismissed
 end
 
 return M
