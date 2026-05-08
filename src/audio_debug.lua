@@ -8,6 +8,7 @@
 local waveform = require("src.gen.waveform")
 local envelope = require("src.gen.envelope")
 local palette  = require("src.palette")
+local viewport = require("src.viewport")
 
 local M = {}
 
@@ -33,7 +34,7 @@ local function build()
         sources[kind] = waveform.to_source(samples, waveform.SAMPLE_RATE)
     end
 
-    local W       = love.graphics.getWidth()
+    local W       = viewport.CANVAS_W
     local btn_w   = 130
     local btn_h   = 90
     local gap     = 14
@@ -71,7 +72,7 @@ end
 
 function M.draw()
     ensure_loaded()
-    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+    local W, H = viewport.CANVAS_W, viewport.CANVAS_H
     local font = love.graphics.getFont()
 
     love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.96)
@@ -89,7 +90,7 @@ function M.draw()
             :format(ADSR.attack, ADSR.decay, ADSR.sustain, ADSR.release),
         16, 44)
 
-    local mx, my = love.mouse.getPosition()
+    local mx, my = viewport.mouse_position()
     for _, b in ipairs(buttons) do
         local hovered = point_in(b, mx, my)
         love.graphics.setColor(hovered and palette.stone or palette.stone_dark)

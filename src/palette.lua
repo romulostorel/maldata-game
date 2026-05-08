@@ -97,7 +97,8 @@ end
 -- Full-screen overlay showing the 16 swatches in a 4×4 grid with name + hex.
 -- Drawn on top of everything; main.lua toggles it with F1.
 function M.draw_debug()
-    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+    local viewport = require("src.viewport")
+    local W, H = viewport.CANVAS_W, viewport.CANVAS_H
 
     love.graphics.setColor(M.void[1], M.void[2], M.void[3], 0.96)
     love.graphics.rectangle("fill", 0, 0, W, H)

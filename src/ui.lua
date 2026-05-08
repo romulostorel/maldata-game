@@ -144,7 +144,7 @@ local function draw_tool_cell(x, y, icon, cost, selected, font)
 end
 
 local function draw_chrome_strip()
-    local W = love.graphics.getWidth()
+    local W = viewport.CANVAS_W
     love.graphics.setColor(palette.stone_dark)
     love.graphics.rectangle("fill", 0, 0, W, CHROME_H)
     -- Faint paper line at the bottom: separates "chrome" from "play area"
@@ -160,7 +160,7 @@ function M.draw_hud(game)
     local icon = assets.ui.phase_icon[game.phase]
     if icon then
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(icon, love.graphics.getWidth() - 32,
+        love.graphics.draw(icon, viewport.CANVAS_W - 32,
             math.floor((CHROME_H - 24) / 2))
     end
 
@@ -212,7 +212,7 @@ end
 
 function M.draw_build_toolbar(game)
     local font = love.graphics.getFont()
-    local W = love.graphics.getWidth()
+    local W = viewport.CANVAS_W
 
     for i, tool in ipairs(tool_list()) do
         local x = TOOLBAR_X + (i - 1) * TOOL_PAIR_W
@@ -280,7 +280,7 @@ end
 function M.draw_wave_preview(game)
     if #game.wave_preview == 0 then return end
 
-    local W = love.graphics.getWidth()
+    local W = viewport.CANVAS_W
     local n = #game.wave_preview
     local total = n * CARD_W + (n - 1) * CARD_GAP
     local x0 = math.floor((W - total) / 2)
@@ -366,13 +366,13 @@ function M.draw_result(game)
     -- panel for attention.
     love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.85)
     love.graphics.rectangle("fill", 0, 0,
-        love.graphics.getWidth(), love.graphics.getHeight())
+        viewport.CANVAS_W, viewport.CANVAS_H)
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(assets.ui.panel, PANEL.x, PANEL.y)
 
     local font = love.graphics.getFont()
-    local W = love.graphics.getWidth()
+    local W = viewport.CANVAS_W
     local title, color
     if game.outcome == state.OUTCOME_TREASURE_STOLEN then
         title = "TREASURE STOLEN"
@@ -453,13 +453,13 @@ function M.draw_tutorial(game)
 
     love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.70)
     love.graphics.rectangle("fill", 0, 0,
-        love.graphics.getWidth(), love.graphics.getHeight())
+        viewport.CANVAS_W, viewport.CANVAS_H)
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(assets.ui.panel, TUTORIAL_PANEL.x, TUTORIAL_PANEL.y)
 
     local font = love.graphics.getFont()
-    local W = love.graphics.getWidth()
+    local W = viewport.CANVAS_W
 
     local title = "WELCOME TO THE DUNGEON"
     local title_scale = 2

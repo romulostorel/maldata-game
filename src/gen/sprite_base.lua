@@ -207,7 +207,8 @@ end
 function M.draw_debug()
     if not debug_cache then debug_cache = build_debug_cache() end
 
-    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+    local viewport = require("src.viewport")
+    local W, H = viewport.CANVAS_W, viewport.CANVAS_H
 
     love.graphics.setColor(palette.void[1], palette.void[2], palette.void[3], 0.96)
     love.graphics.rectangle("fill", 0, 0, W, H)
