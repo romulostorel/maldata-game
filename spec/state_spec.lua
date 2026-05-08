@@ -488,6 +488,56 @@ describe("state", function()
         end)
     end)
 
+    describe("wave_preview", function()
+        it("pre-rolls num_heroes heroes at state.new", function()
+            local s = state.new(7)
+            assert.are.equal(s.num_heroes, #s.wave_preview)
+            for _, h in ipairs(s.wave_preview) do
+                assert.is_not_nil(h.class)
+                assert.is_true(h.hp > 0)
+                assert.is_true(h.atk > 0)
+            end
+        end)
+
+        it("invasion promotes preview heroes by reference (no re-roll)", function()
+            local s = state.new(7)
+            local previewed = { s.wave_preview[1], s.wave_preview[2], s.wave_preview[3] }
+            state.advance(s)
+            -- heroes[1] is the same table as wave_preview[1] before advance.
+            assert.are.equal(previewed[1], s.heroes[1])
+            assert.are.equal(previewed[2], s.hero_queue[1])
+            assert.are.equal(previewed[3], s.hero_queue[2])
+            assert.are.equal(0, #s.wave_preview)
+        end)
+
+        it("re-rolls a fresh preview on return to build", function()
+            local s = state.new(7)
+            state.advance(s)  -- build -> inv
+            assert.are.equal(0, #s.wave_preview)
+            state.advance(s)  -- inv -> result
+            state.advance(s)  -- result -> build
+            assert.are.equal(s.num_heroes, #s.wave_preview)
+        end)
+
+        it("reset re-rolls a fresh preview", function()
+            local s = state.new(7)
+            state.advance(s)
+            assert.are.equal(0, #s.wave_preview)
+            state.reset(s, 42)
+            assert.are.equal(s.num_heroes, #s.wave_preview)
+        end)
+
+        it("preview is deterministic per seed", function()
+            local a = state.new(7)
+            local b = state.new(7)
+            for i = 1, a.num_heroes do
+                assert.are.equal(a.wave_preview[i].class, b.wave_preview[i].class)
+                assert.are.equal(a.wave_preview[i].hp,    b.wave_preview[i].hp)
+                assert.are.equal(a.wave_preview[i].atk,   b.wave_preview[i].atk)
+            end
+        end)
+    end)
+
     describe("invasion", function()
         it("spawns a hero at the entrance when entering invasion", function()
             local s = state.new(7)
@@ -594,10 +644,11 @@ describe("state", function()
             end)
 
             it("the wave ends with hero_dead when the last hero falls", function()
-                -- Single-hero wave so a one-shot kill ends the run cleanly.
+                -- Empty the queue to simulate a one-hero wave: only the
+                -- leader is in play, so its death must end the run.
                 local s = state.new(7)
-                s.num_heroes = 1
                 state.advance(s)
+                s.hero_queue = {}
                 s.heroes[1].hp = 1
                 local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
                 inject_monster(s, monster.ORC, mx, my)

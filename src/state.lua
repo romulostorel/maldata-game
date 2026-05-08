@@ -61,8 +61,20 @@ local PHASE_ORDER = {
     M.PHASE_RESULT,
 }
 
+-- Pre-roll the next wave so the player sees the heroes they'll face during
+-- BUILD. The same hero objects are promoted to heroes/queue at invasion
+-- start (no re-roll), so what you see is exactly what shows up.
+local function roll_wave(state)
+    state.wave_preview = {}
+    local entrance = state.dungeon.entrance
+    for _ = 1, state.num_heroes do
+        table.insert(state.wave_preview,
+            hero.new(state.rng, entrance.x, entrance.y))
+    end
+end
+
 function M.new(seed)
-    return {
+    local s = {
         seed = seed,
         rng = rand.new(seed),
         dungeon = dungeon.generate(seed),
@@ -74,10 +86,13 @@ function M.new(seed)
         num_heroes = M.DEFAULT_NUM_HEROES,
         heroes = {},      -- alive (and recently dead) heroes inside the dungeon
         hero_queue = {},  -- pre-rolled heroes still waiting to enter
+        wave_preview = {}, -- next wave's heroes, shown during BUILD
         outcome = nil,
         auto_step = true,
         step_timer = 0,
     }
+    roll_wave(s)
+    return s
 end
 
 local function index_of(phase)
@@ -118,17 +133,17 @@ function M.advance(state)
     if next_phase == M.PHASE_INVASION then
         state.heroes = {}
         state.hero_queue = {}
-        local entrance = state.dungeon.entrance
-        for n = 1, state.num_heroes do
-            local h = hero.new(state.rng, entrance.x, entrance.y)
-            -- The first hero starts on the entrance tile; the rest sit
-            -- in the queue and step in on subsequent ticks.
+        -- Promote the pre-rolled wave: first hero takes the entrance, the
+        -- rest sit in the queue and step in one per tick. Same identities
+        -- the player saw during BUILD — no re-roll here.
+        for n, h in ipairs(state.wave_preview) do
             if n == 1 then
                 table.insert(state.heroes, h)
             else
                 table.insert(state.hero_queue, h)
             end
         end
+        state.wave_preview = {}
         state.outcome = nil
         state.auto_step = true
         state.step_timer = 0
@@ -136,6 +151,7 @@ function M.advance(state)
         state.heroes = {}
         state.hero_queue = {}
         state.outcome = nil
+        roll_wave(state)
     end
 
     set_phase(state, next_phase)
@@ -155,6 +171,7 @@ function M.reset(state, seed)
     state.outcome = nil
     state.auto_step = true
     state.step_timer = 0
+    roll_wave(state)
     set_phase(state, M.PHASE_BUILD)
 end
 

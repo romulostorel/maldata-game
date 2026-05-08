@@ -7,6 +7,7 @@ local state   = require("src.state")
 local assets  = require("src.assets")
 local palette = require("src.palette")
 local audio   = require("src.audio")
+local hero    = require("src.hero")
 
 local M = {}
 
@@ -105,6 +106,32 @@ function M.draw_hud(game)
     end
     love.graphics.print(hotkeys, 8, 40)
 
+    if game.phase == state.PHASE_BUILD and game.wave_preview then
+        M.draw_wave_preview(game)
+    end
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Wave preview line shown during BUILD: tells the player exactly which
+-- heroes are coming and what their HP/ATK rolled to, so build decisions
+-- can react to the threat. Each entry is colored with the class color so
+-- the trio is readable at a glance.
+function M.draw_wave_preview(game)
+    if #game.wave_preview == 0 then return end
+
+    local y = 56
+    love.graphics.setColor(palette.bone)
+    love.graphics.print("INCOMING WAVE:", 8, y)
+
+    local font = love.graphics.getFont()
+    local x = 8 + font:getWidth("INCOMING WAVE: ")
+    for _, h in ipairs(game.wave_preview) do
+        local label = ("%s %d/%d"):format(h.class, h.hp, h.atk)
+        love.graphics.setColor(hero.CLASSES[h.class].color)
+        love.graphics.print(label, x, y)
+        x = x + font:getWidth(label) + 16
+    end
     love.graphics.setColor(1, 1, 1, 1)
 end
 
