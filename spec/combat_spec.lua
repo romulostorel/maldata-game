@@ -1,6 +1,20 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
-local combat = require("src.combat")
+local combat  = require("src.combat")
+local dungeon = require("src.dungeon")
+
+-- Build a minimal dungeon-shaped table for LoS tests: a fixed-size open
+-- floor grid that the test then walls a specific tile of. Avoids pulling
+-- in the procgen and the seeded RNG just to ask "is this 5x5 patch
+-- passable?".
+local function open_dungeon(w, h)
+    local g = {}
+    for y = 1, h do
+        g[y] = {}
+        for x = 1, w do g[y][x] = dungeon.FLOOR end
+    end
+    return { grid = g }
+end
 
 local function actor(x, y, atk, range)
     return {
@@ -40,6 +54,58 @@ describe("combat", function()
         it("treats same tile as in range", function()
             local a = actor(5, 5, 1, 1)
             assert.is_true(combat.in_range(a, actor(5, 5)))
+        end)
+
+        describe("wall LoS for ranged attacks (range >= 2)", function()
+            it("a wall on the cardinal line blocks the shot", function()
+                local d = open_dungeon(10, 10)
+                local a = actor(5, 5, 1, 2)
+                local t = actor(5, 7)
+                assert.is_true(combat.in_range(a, t, d), "open shot should land")
+                d.grid[6][5] = dungeon.WALL
+                assert.is_false(combat.in_range(a, t, d),
+                    "wall between attacker and target must block ranged shot")
+            end)
+
+            it("a clear cardinal line stays in range when LoS is checked", function()
+                local d = open_dungeon(10, 10)
+                local a = actor(5, 5, 1, 2)
+                assert.is_true(combat.in_range(a, actor(7, 5), d))
+                assert.is_true(combat.in_range(a, actor(3, 5), d))
+                assert.is_true(combat.in_range(a, actor(5, 3), d))
+            end)
+
+            it("diagonal manhattan-2 needs only ONE clear L-corner", function()
+                local d = open_dungeon(10, 10)
+                local a = actor(5, 5, 1, 2)
+                local t = actor(6, 6)
+                -- Wall one of the two corners — the OTHER L-path still
+                -- offers a clear shot.
+                d.grid[5][6] = dungeon.WALL
+                assert.is_true(combat.in_range(a, t, d),
+                    "diagonal shot routes through the still-open corner")
+                -- Wall the second corner too — now the target is sealed.
+                d.grid[6][5] = dungeon.WALL
+                assert.is_false(combat.in_range(a, t, d),
+                    "both corners walled = target is in a pocket")
+            end)
+
+            it("LoS check is skipped when no dungeon arg is passed", function()
+                -- Backward-compat: monsters and old callers don't know
+                -- about LoS — they reach adjacent targets unconditionally.
+                local a = actor(5, 5, 1, 1)
+                assert.is_true(combat.in_range(a, actor(6, 5)))
+            end)
+
+            it("range 1 (melee) ignores LoS — adjacency is unconditional", function()
+                -- Even passing a dungeon, a melee attacker still reaches
+                -- any cardinal-adjacent tile. There's no "between" cell
+                -- at d=1 to obstruct, so the LoS branch is short-circuited.
+                local d = open_dungeon(10, 10)
+                local a = actor(5, 5, 1, 1)
+                assert.is_true(combat.in_range(a, actor(6, 5), d))
+                assert.is_true(combat.in_range(a, actor(5, 6), d))
+            end)
         end)
     end)
 

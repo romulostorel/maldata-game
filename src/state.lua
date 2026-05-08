@@ -569,11 +569,13 @@ end
 --   Archer  → focus-fire the lowest-HP monster in range (counters the
 --             goblin cluster + slime mini-spam by killing one at a time).
 --   default → first monster in range (iteration order).
+-- Dungeon is passed to in_range so the wall LoS check kicks in for the
+-- ranged classes — heroes can't shoot through player-built walls.
 local function find_target_for_hero(state, h)
     local best, best_hp = nil, math.huge
     if h.class == hero.ARCHER then
         for _, m in ipairs(state.monsters) do
-            if m.alive and combat.in_range(h, m) then
+            if m.alive and combat.in_range(h, m, state.dungeon) then
                 if m.hp < best_hp then
                     best, best_hp = m, m.hp
                 end
@@ -582,11 +584,13 @@ local function find_target_for_hero(state, h)
         return best
     end
     for _, m in ipairs(state.monsters) do
-        if m.alive and combat.in_range(h, m) then return m end
+        if m.alive and combat.in_range(h, m, state.dungeon) then return m end
     end
     return nil
 end
 
+-- Monsters are all melee in v1.5, so LoS is moot here — adjacency is the
+-- whole check. Skipping the dungeon arg keeps this code path zero-overhead.
 local function find_hero_in_range(state, m)
     for _, h in ipairs(state.heroes) do
         if h.alive and combat.in_range(m, h) then return h end

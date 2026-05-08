@@ -13,6 +13,7 @@ local effects     = require("src.effects")
 local audio       = require("src.audio")
 local audio_debug = require("src.audio_debug")
 local viewport    = require("src.viewport")
+local hero        = require("src.hero")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
@@ -38,6 +39,19 @@ local function on_combat_event(kind, attacker, target, damage)
         local color = target.class and palette.blood or palette.paper
         effects.spawn_hit(target.x, target.y)
         effects.spawn_damage(target.x, target.y, damage or attacker.atk, color)
+        -- Projectile for ranged hero classes. Only fire on the FIRST swing
+        -- per attacker per tick: the mage's splash hits trigger more
+        -- "attack" events with the same `now` timestamp; without this
+        -- guard the AoE moment turns into a fan of bolts to every
+        -- splashed neighbor. Splash hits already get their own hit burst
+        -- + damage popup, so the AoE still reads.
+        if (attacker.class == hero.ARCHER or attacker.class == hero.MAGE)
+           and attacker._proj_at ~= now then
+            local proj_kind = (attacker.class == hero.MAGE) and "bolt" or "arrow"
+            effects.spawn_projectile(attacker.x, attacker.y,
+                target.x, target.y, proj_kind)
+            attacker._proj_at = now
+        end
         if attacker.class then
             audio.play("hero_attack_" .. attacker.class)
         elseif attacker.type then

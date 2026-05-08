@@ -127,4 +127,63 @@ function M.new_damage_popup(cx, cy, amount, color)
     }
 end
 
+-- Travelling projectile: a small shape moves from `from` to `to` over
+-- `life` seconds, then disappears. The damage popup + hit burst on the
+-- target still spawn at the tick the attack lands (they fire from
+-- main.lua on the "attack" event), so the projectile is a continuity
+-- line — it shows where the hit came from, not the hit itself.
+--
+-- kind = "arrow"  → cream-brown shaft + tip, points along travel direction.
+-- kind = "bolt"   → magenta orb with a brighter core, no rotation needed.
+local PROJ_LIFE = { arrow = 0.20, bolt = 0.26 }
+
+local function draw_arrow(px, py, angle, fade)
+    love.graphics.push()
+    love.graphics.translate(px, py)
+    love.graphics.rotate(angle)
+    love.graphics.setColor(0.88, 0.78, 0.55, fade)
+    love.graphics.rectangle("fill", -7, -1, 12, 2)
+    love.graphics.polygon("fill", 7, 0, 3, -3, 3, 3)
+    love.graphics.pop()
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function draw_bolt(px, py, _angle, fade)
+    -- Outer halo + inner bright core. No rotation — orb reads the same
+    -- from every angle, so we save the matrix push.
+    love.graphics.setColor(0.95, 0.50, 0.90, fade * 0.85)
+    love.graphics.circle("fill", px, py, 5)
+    love.graphics.setColor(1.00, 0.92, 1.00, fade)
+    love.graphics.circle("fill", px, py, 2.5)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function M.new_projectile(from_x, from_y, to_x, to_y, kind)
+    local life = PROJ_LIFE[kind] or 0.22
+    local dx = to_x - from_x
+    local dy = to_y - from_y
+    local angle = math.atan2(dy, dx)
+    local draw_fn = (kind == "bolt") and draw_bolt or draw_arrow
+    return {
+        kind = "projectile",
+        t = 0,
+        life = life,
+        from_x = from_x,
+        from_y = from_y,
+        to_x = to_x,
+        to_y = to_y,
+        angle = angle,
+        draw = function(self)
+            local progress = self.t / self.life
+            if progress > 1 then progress = 1 end
+            local px = self.from_x + (self.to_x - self.from_x) * progress
+            local py = self.from_y + (self.to_y - self.from_y) * progress
+            -- Hold full alpha until the last 20% of life, then fade out.
+            local fade = 1
+            if progress > 0.8 then fade = 1 - (progress - 0.8) / 0.2 end
+            draw_fn(px, py, self.angle, fade)
+        end,
+    }
+end
+
 return M

@@ -36,6 +36,17 @@ function M.spawn_damage(tx, ty, amount, color)
     list[#list + 1] = effect_gen.new_damage_popup(cx, cy, amount, color)
 end
 
+-- Travelling projectile from one tile center to another. kind ∈
+-- {"arrow", "bolt"} drives the visual (Archer/Mage respectively). Spawn
+-- only for the FIRST swing of an attacker per tick — splash hits already
+-- get hit bursts + damage popups, and adding a projectile for each one
+-- would visually flood the AoE moment.
+function M.spawn_projectile(from_tx, from_ty, to_tx, to_ty, kind)
+    local fx, fy = tile_center(from_tx, from_ty)
+    local tx, ty = tile_center(to_tx, to_ty)
+    list[#list + 1] = effect_gen.new_projectile(fx, fy, tx, ty, kind)
+end
+
 function M.update(dt)
     local i = 1
     while i <= #list do

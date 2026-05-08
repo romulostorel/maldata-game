@@ -20,18 +20,23 @@ M.WARRIOR = "warrior"
 M.ARCHER  = "archer"
 M.MAGE    = "mage"
 
--- v1 stat sheet: hp / hp_var / atk / atk_var / range / retaliate / color.
--- All classes are melee (range 1) — ranged heroes vs. melee monsters
--- broke balance in playtest. retaliate > 0 means "deal N dmg back when
--- struck adjacent"; only Warrior has it for now.
+-- v1.5 stat sheet: hp / hp_var / atk / atk_var / range / retaliate / color.
+-- Warrior is the lone melee tank. Archer + Mage are range 2 with wall
+-- line-of-sight — they get one free swing before the lead monster reaches
+-- adjacency, which the player counterbalances by walling chokepoints
+-- so the bolt/arrow path is broken. retaliate > 0 means "deal N dmg back
+-- when struck adjacent"; only Warrior has it.
+--
+-- HP nudges from the all-melee era: Archer 10→9 and Mage 8→7 to offset
+-- the free-tick advantage of range 2.
 M.CLASSES = {
     [M.WARRIOR] = { hp = 15, hp_var = 3, atk = 4, atk_var = 1, range = 1,
                     retaliate = 1,
                     color = { 1.00, 0.55, 0.20 } },
-    [M.ARCHER]  = { hp = 10, hp_var = 2, atk = 5, atk_var = 1, range = 1,
+    [M.ARCHER]  = { hp = 9,  hp_var = 2, atk = 5, atk_var = 1, range = 2,
                     retaliate = 0,
                     color = { 0.80, 0.95, 1.00 } },
-    [M.MAGE]    = { hp = 8,  hp_var = 2, atk = 6, atk_var = 2, range = 1,
+    [M.MAGE]    = { hp = 7,  hp_var = 2, atk = 6, atk_var = 2, range = 2,
                     retaliate = 0,
                     color = { 0.95, 0.50, 0.90 } },
 }

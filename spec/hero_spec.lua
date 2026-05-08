@@ -5,21 +5,24 @@ local rand = require("src.rand")
 
 describe("hero", function()
     describe("CLASSES", function()
-        it("matches the v1 stat sheet", function()
+        it("matches the v1.5 stat sheet", function()
             local w = hero.CLASSES[hero.WARRIOR]
             assert.are.equal(15, w.hp); assert.are.equal(3, w.hp_var)
             assert.are.equal(4,  w.atk); assert.are.equal(1, w.atk_var)
             assert.are.equal(1,  w.range)
 
+            -- Archer + Mage are now range 2 (with wall LoS — see combat.lua).
+            -- HP is nudged down to offset the free swing they get before
+            -- the lead monster reaches adjacency.
             local a = hero.CLASSES[hero.ARCHER]
-            assert.are.equal(10, a.hp); assert.are.equal(2, a.hp_var)
-            assert.are.equal(5,  a.atk); assert.are.equal(1, a.atk_var)
-            assert.are.equal(1,  a.range)
+            assert.are.equal(9, a.hp); assert.are.equal(2, a.hp_var)
+            assert.are.equal(5, a.atk); assert.are.equal(1, a.atk_var)
+            assert.are.equal(2, a.range)
 
             local m = hero.CLASSES[hero.MAGE]
-            assert.are.equal(8, m.hp); assert.are.equal(2, m.hp_var)
+            assert.are.equal(7, m.hp); assert.are.equal(2, m.hp_var)
             assert.are.equal(6, m.atk); assert.are.equal(2, m.atk_var)
-            assert.are.equal(1, m.range)
+            assert.are.equal(2, m.range)
         end)
 
         it("only Warrior has a retaliate value (1); others are 0", function()
