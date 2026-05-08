@@ -10,6 +10,7 @@ local audio    = require("src.audio")
 local hero     = require("src.hero")
 local monster  = require("src.monster")
 local viewport = require("src.viewport")
+local render   = require("src.render")
 
 local M = {}
 
@@ -60,6 +61,9 @@ local tutorial_dismissed = false
 
 local function draw_bar(entity, color)
     local px, py = grid.tile_to_pixel(entity.x, entity.y)
+    -- Route through the same tween the sprite uses, otherwise the bar
+    -- snaps to the destination tile while the sprite is still gliding.
+    px, py = render.smooth_pixel_pos(entity, px, py)
     local bar_x = math.floor(px + (grid.TILE - BAR_W) / 2)
     local bar_y = py + BAR_OFFSET_Y
 

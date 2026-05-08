@@ -30,7 +30,12 @@ local MOVE_DUR = 0.45
 -- the last-drawn pixel to the new tile's pixel. New entities (first sight)
 -- snap with no tween — that handles wave-queue spawns and slime splits
 -- cleanly without a teleport-from-origin glitch.
-local function smooth_pixel_pos(entity, px, py)
+--
+-- Exposed via M.smooth_pixel_pos so ui.lua can route HP bar positions
+-- through the same tween — otherwise bars snap while sprites glide.
+-- Idempotent within a frame: a second call sees _smooth_tx already in
+-- sync with entity.x, so it just returns the cached pos.
+function M.smooth_pixel_pos(entity, px, py)
     local now = love.timer.getTime()
 
     if entity._smooth_tx == nil then
@@ -141,7 +146,7 @@ function M.draw_monsters(monsters)
         local img   = pick_image(m, anims, "idle")
         if img then
             local px, py = grid.tile_to_pixel(m.x, m.y)
-            local sx, sy = smooth_pixel_pos(m, px, py)
+            local sx, sy = M.smooth_pixel_pos(m, px, py)
             -- Mini-slimes (slime split) render at 70% scale to read as "smaller
             -- threats" without needing a separate sprite set. 24×24 base sprite
             -- centered inside the tile via SPRITE_INSET; scaled draw stays
@@ -200,7 +205,7 @@ function M.draw_heroes(heroes)
         local img   = pick_image(h, anims, "walk")
         if img then
             local px, py = grid.tile_to_pixel(h.x, h.y)
-            local sx, sy = smooth_pixel_pos(h, px, py)
+            local sx, sy = M.smooth_pixel_pos(h, px, py)
             love.graphics.draw(img, sx + SPRITE_INSET, sy + SPRITE_INSET)
         end
     end
