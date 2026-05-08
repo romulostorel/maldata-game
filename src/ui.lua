@@ -144,25 +144,55 @@ function M.draw_hud(game)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Wave preview line shown during BUILD: tells the player exactly which
--- heroes are coming and what their HP/ATK rolled to, so build decisions
--- can react to the threat. Each entry is colored with the class color so
--- the trio is readable at a glance.
+-- Wave preview shown during BUILD: a row of mini-cards (sprite + class +
+-- stats) in the dead space below the grid. Each card carries the class
+-- color on its border so the trio reads at a glance — sprite identifies
+-- the threat, numbers tell you how dangerous.
+local CARD_W, CARD_H = 140, 46
+local CARD_GAP = 20
+local CARD_Y = 550
+local HEADER_Y = 534
+
+local function draw_hero_card(x, y, h, font)
+    local class_color = hero.CLASSES[h.class].color
+
+    love.graphics.setColor(palette.stone_dark)
+    love.graphics.rectangle("fill", x, y, CARD_W, CARD_H)
+    love.graphics.setColor(class_color)
+    love.graphics.rectangle("line", x + 0.5, y + 0.5, CARD_W - 1, CARD_H - 1)
+
+    -- Idle frame 1 of the live entity sprite. 24×24, vertically centered.
+    local sprite = assets.entity[h.class].idle[1]
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(sprite, x + 8, y + math.floor((CARD_H - 24) / 2))
+
+    -- Class name in class color, stats in bone underneath.
+    love.graphics.setColor(class_color)
+    love.graphics.print(h.class:upper(), x + 40, y + 6)
+
+    love.graphics.setColor(palette.bone)
+    love.graphics.print(
+        ("HP %d   ATK %d"):format(h.hp, h.atk),
+        x + 40, y + 24)
+end
+
 function M.draw_wave_preview(game)
     if #game.wave_preview == 0 then return end
 
-    local y = 56
-    love.graphics.setColor(palette.bone)
-    love.graphics.print("INCOMING WAVE:", 8, y)
+    local W = love.graphics.getWidth()
+    local n = #game.wave_preview
+    local total = n * CARD_W + (n - 1) * CARD_GAP
+    local x0 = math.floor((W - total) / 2)
 
     local font = love.graphics.getFont()
-    local x = 8 + font:getWidth("INCOMING WAVE: ")
-    for _, h in ipairs(game.wave_preview) do
-        local label = ("%s %d/%d"):format(h.class, h.hp, h.atk)
-        love.graphics.setColor(hero.CLASSES[h.class].color)
-        love.graphics.print(label, x, y)
-        x = x + font:getWidth(label) + 16
+    love.graphics.setColor(palette.stone_light)
+    local hdr = "INCOMING WAVE"
+    love.graphics.print(hdr, math.floor((W - font:getWidth(hdr)) / 2), HEADER_Y)
+
+    for i, h in ipairs(game.wave_preview) do
+        draw_hero_card(x0 + (i - 1) * (CARD_W + CARD_GAP), CARD_Y, h, font)
     end
+
     love.graphics.setColor(1, 1, 1, 1)
 end
 
