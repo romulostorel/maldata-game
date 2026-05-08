@@ -18,6 +18,59 @@ local COLOR_PATH_DOT   = { 1.00, 1.00, 1.00, 0.20 }
 -- inside their 32×32 tile.
 local SPRITE_INSET = (grid.TILE - 24) / 2
 
+-- Linear tile-to-tile glide. Less than STEP_INTERVAL (0.6s) so the entity
+-- briefly rests on the destination tile before the next tick fires; the
+-- pause makes each step legible while the glide kills the snap. Pure
+-- render-side: state.lua still moves entities one full tile per tick.
+local MOVE_DUR = 0.45
+
+-- Resolve the pixel position the entity should be drawn at this frame.
+-- Tracks the last-drawn (smooth) pixel pos and the last-seen tile coords
+-- on the entity itself; when the tile coords change, starts a tween from
+-- the last-drawn pixel to the new tile's pixel. New entities (first sight)
+-- snap with no tween — that handles wave-queue spawns and slime splits
+-- cleanly without a teleport-from-origin glitch.
+local function smooth_pixel_pos(entity, px, py)
+    local now = love.timer.getTime()
+
+    if entity._smooth_tx == nil then
+        entity._smooth_tx = entity.x
+        entity._smooth_ty = entity.y
+        entity._smooth_px = px
+        entity._smooth_py = py
+        return px, py
+    end
+
+    if entity._smooth_tx ~= entity.x or entity._smooth_ty ~= entity.y then
+        entity._tween_from_px = entity._smooth_px
+        entity._tween_from_py = entity._smooth_py
+        entity._tween_to_px   = px
+        entity._tween_to_py   = py
+        entity._tween_at      = now
+        entity._smooth_tx     = entity.x
+        entity._smooth_ty     = entity.y
+    end
+
+    if entity._tween_at then
+        local t = (now - entity._tween_at) / MOVE_DUR
+        if t >= 1 then
+            entity._smooth_px = entity._tween_to_px
+            entity._smooth_py = entity._tween_to_py
+            entity._tween_at  = nil
+        else
+            entity._smooth_px = entity._tween_from_px
+                + (entity._tween_to_px - entity._tween_from_px) * t
+            entity._smooth_py = entity._tween_from_py
+                + (entity._tween_to_py - entity._tween_from_py) * t
+        end
+    else
+        entity._smooth_px = px
+        entity._smooth_py = py
+    end
+
+    return entity._smooth_px, entity._smooth_py
+end
+
 function M.draw_dungeon(d)
     love.graphics.setColor(1, 1, 1, 1)
 
@@ -88,6 +141,7 @@ function M.draw_monsters(monsters)
         local img   = pick_image(m, anims, "idle")
         if img then
             local px, py = grid.tile_to_pixel(m.x, m.y)
+            local sx, sy = smooth_pixel_pos(m, px, py)
             -- Mini-slimes (slime split) render at 70% scale to read as "smaller
             -- threats" without needing a separate sprite set. 24×24 base sprite
             -- centered inside the tile via SPRITE_INSET; scaled draw stays
@@ -96,10 +150,10 @@ function M.draw_monsters(monsters)
                 local s = 0.7
                 local ox = (24 * (1 - s)) / 2
                 love.graphics.draw(img,
-                    px + SPRITE_INSET + ox, py + SPRITE_INSET + ox,
+                    sx + SPRITE_INSET + ox, sy + SPRITE_INSET + ox,
                     0, s, s)
             else
-                love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
+                love.graphics.draw(img, sx + SPRITE_INSET, sy + SPRITE_INSET)
             end
         end
     end
@@ -146,7 +200,8 @@ function M.draw_heroes(heroes)
         local img   = pick_image(h, anims, "walk")
         if img then
             local px, py = grid.tile_to_pixel(h.x, h.y)
-            love.graphics.draw(img, px + SPRITE_INSET, py + SPRITE_INSET)
+            local sx, sy = smooth_pixel_pos(h, px, py)
+            love.graphics.draw(img, sx + SPRITE_INSET, sy + SPRITE_INSET)
         end
     end
 end
