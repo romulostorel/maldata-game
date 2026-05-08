@@ -638,14 +638,46 @@ local function apply_mage_splash(state, mage, candidates, on_event)
     end
 end
 
+-- Ranged-damage falloff: any swing landing from d > 1 deals floor(atk/2)
+-- to the main target so a ranged hero can't 1-shot a 5-HP goblin from
+-- outside engagement range. Adjacent (d=1) attacks stay at full atk.
+-- Mage splash uses raw atk via MAGE_SPLASH_DIVISOR — splash damage is
+-- the AoE identity and stays consistent regardless of distance.
+local function damage_for_distance(h, target)
+    local d = grid.manhattan(h.x, h.y, target.x, target.y)
+    if d > 1 then return math.floor(h.atk / 2) end
+    return h.atk
+end
+
 local function hero_attack(state, h, target, on_event)
     local mage_candidates = nil
     if h.class == hero.MAGE then
         mage_candidates = gather_splash_candidates(state, target)
     end
-    apply_attack(state, h, target, h.atk, on_event)
+    apply_attack(state, h, target, damage_for_distance(h, target), on_event)
     if mage_candidates then
         apply_mage_splash(state, h, mage_candidates, on_event)
+    end
+end
+
+-- Close-in: a ranged attacker that swung from d > 1 also takes one step
+-- toward the still-alive target on the same tick. Without this, a hero
+-- with a target perpetually in range never moves — they kite forever
+-- and the player has no chance to engage. With it, the ranged hero is
+-- guaranteed to be at d=1 within ~2 ticks, so monsters trade hits back.
+-- Strict path (no monster fallback) so a freshly-spawned mini-slime on
+-- path[1] doesn't get walked onto; if the lane isn't clear, the hero
+-- just attacks again from the same tile next tick.
+local function attempt_close_in(state, h, target, on_event)
+    if not target.alive then return end
+    if grid.manhattan(h.x, h.y, target.x, target.y) <= 1 then return end
+    local path = ai.find_path(state.dungeon,
+        h.x, h.y, target.x, target.y,
+        path_blocker(state, h))
+    if path and #path > 0 then
+        h.x = path[1].x
+        h.y = path[1].y
+        if on_event then on_event("move", h) end
     end
 end
 
@@ -739,6 +771,7 @@ function M.step_invasion(state, on_event)
             local target = find_target_for_hero(state, h)
             if target then
                 hero_attack(state, h, target, on_event)
+                attempt_close_in(state, h, target, on_event)
             else
                 local path = M.hero_path(state, h)
                 if path and #path > 0 then

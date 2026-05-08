@@ -1576,6 +1576,104 @@ describe("state", function()
             end)
         end)
 
+        describe("ranged counterplay (damage falloff + close-in)", function()
+            -- Set up an archer at an interior floor tile that has a
+            -- cardinal 2-tile floor sight-line. Returns the hero plus
+            -- the (mid, far) tile pair so the caller can inject the
+            -- target monster at `far`.
+            local function archer_with_2tile_lane(s)
+                local CARDINAL = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
+                for _, t in ipairs(free_tiles(s, 300)) do
+                    for _, d in ipairs(CARDINAL) do
+                        local mid_x, mid_y = t.x + d[1], t.y + d[2]
+                        local far_x, far_y = t.x + d[1] * 2, t.y + d[2] * 2
+                        if s.dungeon.grid[mid_y] and s.dungeon.grid[mid_y][mid_x] == dungeon.FLOOR
+                           and s.dungeon.grid[far_y] and s.dungeon.grid[far_y][far_x] == dungeon.FLOOR
+                           and not (mid_x == s.dungeon.entrance.x and mid_y == s.dungeon.entrance.y)
+                           and not (far_x == s.dungeon.entrance.x and far_y == s.dungeon.entrance.y)
+                           and not (mid_x == s.dungeon.treasure.x and mid_y == s.dungeon.treasure.y)
+                           and not (far_x == s.dungeon.treasure.x and far_y == s.dungeon.treasure.y) then
+                            local h = make_hero(hero.ARCHER, t.x, t.y)
+                            h.range = 2
+                            table.insert(s.heroes, h)
+                            return h, { x = far_x, y = far_y }
+                        end
+                    end
+                end
+            end
+
+            it("a ranged hit from d>1 deals floor(atk/2)", function()
+                local s = state.new(7)
+                state.advance(s)
+                s.heroes = {}
+                s.hero_queue = { make_hero(hero.WARRIOR, 0, 0) }
+                local h, far = archer_with_2tile_lane(s)
+                assert.is_not_nil(h, "no 2-tile lane in seed 7")
+                h.atk = 5
+                local m = inject_monster(s, monster.GOBLIN, far.x, far.y)
+                m.hp = 99
+                local hp_before = m.hp
+                state.step_invasion(s)
+                -- Damage should be floor(5/2) = 2 at d=2, not 5 at d=1.
+                assert.are.equal(hp_before - 2, m.hp)
+            end)
+
+            it("an adjacent ranged hit deals full atk", function()
+                local s = state.new(7)
+                state.advance(s)
+                s.heroes = {}
+                s.hero_queue = { make_hero(hero.WARRIOR, 0, 0) }
+                local h, _ = inject_hero_at_open_interior(s, hero.ARCHER, 1)
+                h.range = 2
+                h.atk = 5
+                local mx, my = first_floor_neighbor(s, h.x, h.y)
+                local m = inject_monster(s, monster.GOBLIN, mx, my)
+                m.hp = 99
+                local hp_before = m.hp
+                state.step_invasion(s)
+                assert.are.equal(hp_before - h.atk, m.hp)
+            end)
+
+            it("a ranged attacker steps closer after firing from d>1", function()
+                local s = state.new(7)
+                state.advance(s)
+                s.heroes = {}
+                s.hero_queue = { make_hero(hero.WARRIOR, 0, 0) }
+                local h, far = archer_with_2tile_lane(s)
+                assert.is_not_nil(h)
+                -- atk=4 → falloff 2 dmg at d=2; goblin at 50 hp survives,
+                -- so close-in must trigger.
+                h.atk = 4
+                local hx0, hy0 = h.x, h.y
+                local m = inject_monster(s, monster.GOBLIN, far.x, far.y)
+                m.hp = 50
+                state.step_invasion(s)
+                assert.is_true(m.hp < 50, "attack did not land")
+                assert.is_true(h.x ~= hx0 or h.y ~= hy0,
+                    "ranged attacker should close in after firing from d>1")
+                assert.are.equal(1,
+                    grid.manhattan(h.x, h.y, m.x, m.y),
+                    "expected the close-in to land at d=1")
+            end)
+
+            it("close-in does not fire when the swing killed the target", function()
+                local s = state.new(7)
+                state.advance(s)
+                s.heroes = {}
+                s.hero_queue = { make_hero(hero.WARRIOR, 0, 0) }
+                local h, far = archer_with_2tile_lane(s)
+                assert.is_not_nil(h)
+                h.atk = 50
+                local hx0, hy0 = h.x, h.y
+                local m = inject_monster(s, monster.GOBLIN, far.x, far.y)
+                m.hp = 1
+                state.step_invasion(s)
+                assert.is_false(m.alive, "test expects the goblin to die")
+                assert.are.equal(hx0, h.x)
+                assert.are.equal(hy0, h.y)
+            end)
+        end)
+
         describe("hero_path fallback when the strict route is blocked", function()
             it("returns a path even when monsters block every alternative", function()
                 -- Plant monsters on every tile of the would-be route except

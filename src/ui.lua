@@ -347,9 +347,13 @@ local function draw_hero_card(x, y, h, font)
     love.graphics.print(h.class:upper(), x + 36, y + 3)
 
     love.graphics.setColor(palette.bone)
-    love.graphics.print(
-        ("HP %d  ATK %d"):format(h.hp, h.atk),
-        x + 36, y + 15)
+    local stats
+    if h.range > 1 then
+        stats = ("HP %d  ATK %d  R%d"):format(h.hp, h.atk, h.range)
+    else
+        stats = ("HP %d  ATK %d"):format(h.hp, h.atk)
+    end
+    love.graphics.print(stats, x + 36, y + 15)
 
     love.graphics.setColor(palette.stone_light)
     love.graphics.print(PASSIVE_HERO[h.class] or "", x + 36, y + 27)
