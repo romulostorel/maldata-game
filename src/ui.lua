@@ -69,12 +69,30 @@ function M.draw_hp_bars(game)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- Top chrome strip height. Sized to fit 4 HUD lines (phase / phase-info /
+-- hotkeys / wave preview) at 16 px each + 12 px bottom padding. Constant
+-- across phases so the strip never resizes mid-run.
+local CHROME_H = 76
+
+local function draw_chrome_strip()
+    local W = love.graphics.getWidth()
+    love.graphics.setColor(palette.stone_dark)
+    love.graphics.rectangle("fill", 0, 0, W, CHROME_H)
+    -- Faint paper line at the bottom: separates "chrome" from "play area"
+    -- without screaming. Half-alpha keeps it as a hint, not a hard border.
+    love.graphics.setColor(palette.paper[1], palette.paper[2], palette.paper[3], 0.45)
+    love.graphics.rectangle("fill", 0, CHROME_H - 1, W, 1)
+end
+
 function M.draw_hud(game)
-    -- Phase icon in the top-right corner so it never overlaps HUD text.
+    draw_chrome_strip()
+
+    -- Phase icon centered vertically in the chrome strip, top-right corner.
     local icon = assets.ui.phase_icon[game.phase]
     if icon then
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(icon, love.graphics.getWidth() - 32, 8)
+        love.graphics.draw(icon, love.graphics.getWidth() - 32,
+            math.floor((CHROME_H - 24) / 2))
     end
 
     love.graphics.setColor(palette.paper)
@@ -105,7 +123,10 @@ function M.draw_hud(game)
             8, 24)
     end
 
-    love.graphics.setColor(palette.stone_light)
+    -- Hotkeys: bone (was stone_light, which vanished against the dungeon).
+    -- Against the new chrome strip, bone reads cleanly without competing
+    -- with the brighter paper headline above.
+    love.graphics.setColor(palette.bone)
     local hotkeys
     if game.phase == state.PHASE_BUILD then
         hotkeys = "[LMB] place  [RMB] remove  [SPACE] start invasion  [R] new dungeon  [ESC] quit"
