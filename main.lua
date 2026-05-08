@@ -137,7 +137,11 @@ function love.mousepressed(x, y, button)
     end
 
     if game.phase == state.PHASE_RESULT then
-        if button == 1 and ui.is_restart_clicked(x, y) then
+        if button == 1 and ui.is_retry_clicked(x, y) then
+            audio.play("ui_click")
+            state.advance(game)  -- result -> build, same dungeon
+            effects.clear()
+        elseif button == 1 and ui.is_new_dungeon_clicked(x, y) then
             audio.play("ui_click")
             state.reset(game, rand_seed())
             effects.clear()

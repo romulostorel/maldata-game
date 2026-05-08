@@ -20,15 +20,20 @@ local BAR_OFFSET_Y = grid.TILE - BAR_H - 2
 local COLOR_BAR_HERO = palette.lighten(palette.moss, 0.20)
 local COLOR_BAR_MONS = palette.blood
 
-local RESTART_BTN = { x = 300, y = 380, w = 200, h = 50 }
+-- Result panel sits at (160, 160) and spans 480×280. The two action buttons
+-- share its bottom row: RETRY (same dungeon, also bound to SPACE) on the
+-- left, NEW DUNGEON (fresh seed, also bound to R) on the right. Both reuse
+-- the same 200×50 asset; layout: 20 px panel padding + 200 button + 40 gap
+-- + 200 button + 20 padding = 480.
+local RETRY_BTN       = { x = 180, y = 380, w = 200, h = 50 }
+local NEW_DUNGEON_BTN = { x = 420, y = 380, w = 200, h = 50 }
 
--- Result-screen panel: positioned so the title (~y=200) and button (y=380)
--- both sit comfortably inside its 480×280 frame.
 local PANEL = { x = 160, y = 160, w = 480, h = 280 }
 
--- Edge-detect for the restart-button hover SFX. Reset whenever the result
--- panel isn't drawn, so re-entering the panel can fire ui_hover again.
-local was_restart_hovered = false
+-- Edge-detect for the per-button hover SFX. Tracked per button so moving
+-- between them re-fires the cue.
+local was_retry_hovered       = false
+local was_new_dungeon_hovered = false
 
 -- One-shot tutorial overlay. Set to true on the first input event and
 -- never reset within a session (intentional — state.reset / R should not
@@ -148,9 +153,33 @@ local function count_defeated(heroes)
     return n
 end
 
+local function draw_button(btn, label, hovered, hint_key, font)
+    local btn_img = hovered and assets.ui.button_hover or assets.ui.button_idle
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(btn_img, btn.x, btn.y)
+
+    local scale = 1.5
+    local tw = font:getWidth(label) * scale
+    local th = font:getHeight() * scale
+    love.graphics.setColor(palette.paper)
+    love.graphics.print(label,
+        btn.x + (btn.w - tw) / 2,
+        btn.y + (btn.h - th) / 2,
+        0, scale, scale)
+
+    -- Tiny key hint above the button so the player sees both the click
+    -- target and the hotkey at the same glance.
+    if hint_key then
+        love.graphics.setColor(palette.stone_light)
+        local hw = font:getWidth(hint_key)
+        love.graphics.print(hint_key, btn.x + (btn.w - hw) / 2, btn.y - 16)
+    end
+end
+
 function M.draw_result(game)
     if game.phase ~= state.PHASE_RESULT then
-        was_restart_hovered = false
+        was_retry_hovered       = false
+        was_new_dungeon_hovered = false
         return
     end
 
@@ -176,53 +205,50 @@ function M.draw_result(game)
     end
 
     love.graphics.setColor(color)
-    local title_scale = 4
+    local title_scale = 3
     local tw = font:getWidth(title) * title_scale
     love.graphics.print(title, (W - tw) / 2, 200, 0, title_scale, title_scale)
 
-    -- Wave summary: how many of this wave's heroes the dungeon killed.
     local summary = ("%d / %d heroes defeated"):format(
         count_defeated(game.heroes), game.num_heroes)
     local sum_scale = 1.5
     local sw = font:getWidth(summary) * sum_scale
     love.graphics.setColor(palette.bone)
-    love.graphics.print(summary, (W - sw) / 2, 275, 0, sum_scale, sum_scale)
+    love.graphics.print(summary, (W - sw) / 2, 270, 0, sum_scale, sum_scale)
 
-    -- Session tally across this program run (preserved through R/new-dungeon).
     local sess = ("Session: %d W / %d L"):format(
         game.session.wins, game.session.losses)
     local sess_scale = 1.5
     local ssw = font:getWidth(sess) * sess_scale
     love.graphics.setColor(palette.stone_light)
-    love.graphics.print(sess, (W - ssw) / 2, 310, 0, sess_scale, sess_scale)
+    love.graphics.print(sess, (W - ssw) / 2, 305, 0, sess_scale, sess_scale)
 
     local mx, my = love.mouse.getPosition()
-    local hovered = M.is_restart_clicked(mx, my)
-    if hovered and not was_restart_hovered then
-        audio.play("ui_hover")
-    end
-    was_restart_hovered = hovered
-    local btn_img = hovered and assets.ui.button_hover or assets.ui.button_idle
 
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(btn_img, RESTART_BTN.x, RESTART_BTN.y)
+    local retry_hov = M.is_retry_clicked(mx, my)
+    if retry_hov and not was_retry_hovered then audio.play("ui_hover") end
+    was_retry_hovered = retry_hov
+    draw_button(RETRY_BTN, "RETRY", retry_hov, "[SPACE]", font)
 
-    local btn_text = "NEW DUNGEON"
-    local btn_scale = 2
-    local btw = font:getWidth(btn_text) * btn_scale
-    local bth = font:getHeight() * btn_scale
-    love.graphics.setColor(palette.paper)
-    love.graphics.print(btn_text,
-        RESTART_BTN.x + (RESTART_BTN.w - btw) / 2,
-        RESTART_BTN.y + (RESTART_BTN.h - bth) / 2,
-        0, btn_scale, btn_scale)
+    local new_hov = M.is_new_dungeon_clicked(mx, my)
+    if new_hov and not was_new_dungeon_hovered then audio.play("ui_hover") end
+    was_new_dungeon_hovered = new_hov
+    draw_button(NEW_DUNGEON_BTN, "NEW DUNGEON", new_hov, "[R]", font)
 
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-function M.is_restart_clicked(mx, my)
-    return mx >= RESTART_BTN.x and mx <= RESTART_BTN.x + RESTART_BTN.w
-       and my >= RESTART_BTN.y and my <= RESTART_BTN.y + RESTART_BTN.h
+local function inside(btn, mx, my)
+    return mx >= btn.x and mx <= btn.x + btn.w
+       and my >= btn.y and my <= btn.y + btn.h
+end
+
+function M.is_retry_clicked(mx, my)
+    return inside(RETRY_BTN, mx, my)
+end
+
+function M.is_new_dungeon_clicked(mx, my)
+    return inside(NEW_DUNGEON_BTN, mx, my)
 end
 
 -- First-boot tutorial: drawn over the build phase until any input arrives.
