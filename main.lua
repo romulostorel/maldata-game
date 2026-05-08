@@ -149,5 +149,22 @@ function love.mousepressed(x, y, button)
         return
     end
 
+    -- Build-phase toolbar: clicking a cell selects the same tool a number
+    -- key would. Routed before tile placement so a click inside the chrome
+    -- never falls through to the world.
+    if game.phase == state.PHASE_BUILD and button == 1 then
+        local tool = ui.tool_at(x, y)
+        if tool then
+            audio.play("ui_click")
+            if tool.kind == state.TOOL_MONSTER then
+                state.select_tool(game, state.TOOL_MONSTER)
+                state.select_monster_type(game, tool.type_key)
+            else
+                state.select_tool(game, state.TOOL_WALL)
+            end
+            return
+        end
+    end
+
     input.handle_mouse(game, x, y, button)
 end

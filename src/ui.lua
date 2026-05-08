@@ -8,6 +8,7 @@ local assets  = require("src.assets")
 local palette = require("src.palette")
 local audio   = require("src.audio")
 local hero    = require("src.hero")
+local monster = require("src.monster")
 
 local M = {}
 
@@ -69,10 +70,77 @@ function M.draw_hp_bars(game)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Top chrome strip height. Sized to fit 4 HUD lines (phase / phase-info /
--- hotkeys / wave preview) at 16 px each + 12 px bottom padding. Constant
--- across phases so the strip never resizes mid-run.
+-- Top chrome strip height. Sized so the build-phase toolbar (28 px tall,
+-- starting at y=22) plus its hotkey hint row (y=58) fit with a margin.
+-- Constant across phases so the strip never resizes mid-run.
 local CHROME_H = 76
+
+-- Build-phase toolbar: 4 cells (goblin / orc / slime / wall) with the
+-- placement cost printed to the right of each, and a BUDGET label
+-- right-aligned. Cells are clickable — see M.tool_at.
+local TOOLBAR_X = 8
+local TOOLBAR_Y = 22
+local CELL_SIZE = 28
+local COST_LABEL_W = 12       -- width budget for the cost digit beside each cell
+local TOOL_GAP = 18            -- empty space between consecutive (cell+cost) pairs
+local TOOL_PAIR_W = CELL_SIZE + 4 + COST_LABEL_W + TOOL_GAP
+
+local function tool_list()
+    return {
+        { kind = state.TOOL_MONSTER, type_key = monster.GOBLIN },
+        { kind = state.TOOL_MONSTER, type_key = monster.ORC    },
+        { kind = state.TOOL_MONSTER, type_key = monster.SLIME  },
+        { kind = state.TOOL_WALL                                },
+    }
+end
+
+local function tool_icon(tool)
+    if tool.kind == state.TOOL_MONSTER then
+        return assets.entity[tool.type_key].idle[1]
+    end
+    return assets.tiles.wall[1]
+end
+
+local function tool_cost(tool)
+    if tool.kind == state.TOOL_MONSTER then
+        return monster.TYPES[tool.type_key].cost
+    end
+    return state.WALL_COST
+end
+
+local function tool_is_selected(game, tool)
+    if tool.kind == state.TOOL_MONSTER then
+        return game.selected_tool == state.TOOL_MONSTER
+           and game.selected_monster_type == tool.type_key
+    end
+    return game.selected_tool == state.TOOL_WALL
+end
+
+local function draw_tool_cell(x, y, icon, cost, selected, font)
+    local bg = selected and palette.lighten(palette.stone_dark, 0.20)
+                       or palette.darken(palette.stone_dark, 0.30)
+    love.graphics.setColor(bg)
+    love.graphics.rectangle("fill", x, y, CELL_SIZE, CELL_SIZE)
+
+    local border = selected and palette.gold_accent or palette.stone_light
+    love.graphics.setColor(border)
+    love.graphics.rectangle("line", x + 0.5, y + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+
+    -- Both monster (24×24) and wall-tile (32×32) sprites land at a uniform
+    -- 24×24 visual size so the row reads as a tidy grid.
+    local iw = icon:getWidth()
+    local TARGET = 24
+    local s = TARGET / iw
+    local inset = math.floor((CELL_SIZE - TARGET) / 2)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(icon, x + inset, y + inset, 0, s, s)
+
+    local cost_color = selected and palette.paper or palette.bone
+    love.graphics.setColor(cost_color)
+    love.graphics.print(tostring(cost),
+        x + CELL_SIZE + 4,
+        y + math.floor((CELL_SIZE - 12) / 2))
+end
 
 local function draw_chrome_strip()
     local W = love.graphics.getWidth()
@@ -102,14 +170,7 @@ function M.draw_hud(game)
         8, 8)
 
     if game.phase == state.PHASE_BUILD then
-        love.graphics.setColor(palette.bone)
-        local sel = game.selected_tool == state.TOOL_WALL
-            and "wall"
-            or game.selected_monster_type
-        love.graphics.print(
-            ("[1] goblin (2)  [2] orc (4)  [3] slime (3)  [4] wall (%d)    selected: %s    budget: %d/%d")
-                :format(state.WALL_COST, sel, state.spent_budget(game), state.BUDGET),
-            8, 24)
+        M.draw_build_toolbar(game)
     elseif game.phase == state.PHASE_INVASION then
         love.graphics.setColor(palette.bone)
         local alive = 0
@@ -125,23 +186,62 @@ function M.draw_hud(game)
 
     -- Hotkeys: bone (was stone_light, which vanished against the dungeon).
     -- Against the new chrome strip, bone reads cleanly without competing
-    -- with the brighter paper headline above.
+    -- with the brighter paper headline above. During build the toolbar
+    -- occupies the line-2/3 band, so the hint row drops to y=58.
     love.graphics.setColor(palette.bone)
-    local hotkeys
+    local hotkeys, hotkey_y
     if game.phase == state.PHASE_BUILD then
         hotkeys = "[LMB] place  [RMB] remove  [SPACE] start invasion  [R] new dungeon  [ESC] quit"
+        hotkey_y = 58
     elseif game.phase == state.PHASE_INVASION then
         hotkeys = "[SPACE] pause/resume    [.] step    [R] new dungeon    [ESC] quit"
+        hotkey_y = 40
     else
         hotkeys = "[SPACE] retry same dungeon    [R] new dungeon    [ESC] quit"
+        hotkey_y = 40
     end
-    love.graphics.print(hotkeys, 8, 40)
+    love.graphics.print(hotkeys, 8, hotkey_y)
 
     if game.phase == state.PHASE_BUILD and game.wave_preview then
         M.draw_wave_preview(game)
     end
 
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+function M.draw_build_toolbar(game)
+    local font = love.graphics.getFont()
+    local W = love.graphics.getWidth()
+
+    for i, tool in ipairs(tool_list()) do
+        local x = TOOLBAR_X + (i - 1) * TOOL_PAIR_W
+        draw_tool_cell(x, TOOLBAR_Y,
+            tool_icon(tool), tool_cost(tool),
+            tool_is_selected(game, tool), font)
+    end
+
+    local budget_str = ("BUDGET %d / %d"):format(
+        state.spent_budget(game), state.BUDGET)
+    love.graphics.setColor(palette.paper)
+    local bw = font:getWidth(budget_str)
+    love.graphics.print(budget_str,
+        W - bw - 12,
+        TOOLBAR_Y + math.floor((CELL_SIZE - 12) / 2))
+end
+
+-- Hit-test a (mx, my) point against the build toolbar. Returns the matching
+-- tool descriptor (same shape as tool_list entries) when the point lands
+-- inside one of the cells, or nil otherwise. main.lua uses this to wire
+-- left-click on a cell to the same effect as pressing 1/2/3/4.
+function M.tool_at(mx, my)
+    if my < TOOLBAR_Y or my > TOOLBAR_Y + CELL_SIZE then return nil end
+    for i, tool in ipairs(tool_list()) do
+        local cell_x = TOOLBAR_X + (i - 1) * TOOL_PAIR_W
+        if mx >= cell_x and mx <= cell_x + CELL_SIZE then
+            return tool
+        end
+    end
+    return nil
 end
 
 -- Wave preview shown during BUILD: a row of mini-cards (sprite + class +
