@@ -7,13 +7,16 @@ local grid = require("src.grid")
 local ai = require("src.ai")
 local hero = require("src.hero")
 
--- First n interior tiles (2..W-1, 2..H-1) that aren't the treasure for the
--- given state. Stable per-seed so tests are deterministic.
+-- First n interior FLOOR tiles (2..W-1, 2..H-1) that aren't the treasure
+-- for the given state. Filters by grid value so it skips internal walls
+-- and pillars carved by the procgen layout. Stable per-seed.
 local function free_tiles(s, n)
     local tiles = {}
     for y = 2, grid.HEIGHT - 1 do
         for x = 2, grid.WIDTH - 1 do
-            if not (x == s.dungeon.treasure.x and y == s.dungeon.treasure.y) then
+            if s.dungeon.grid[y][x] == dungeon.FLOOR
+               and not (x == s.dungeon.treasure.x and y == s.dungeon.treasure.y)
+               and not (x == s.dungeon.entrance.x and y == s.dungeon.entrance.y) then
                 table.insert(tiles, { x = x, y = y })
                 if #tiles == n then return tiles end
             end

@@ -59,13 +59,25 @@ describe("dungeon", function()
             end
         end)
 
-        it("fills the entire interior with floor", function()
+        it("subdivides the interior with walls + pillars (still mostly floor)", function()
+            local floor_tiles, wall_tiles = 0, 0
             for y = 2, grid.HEIGHT - 1 do
                 for x = 2, grid.WIDTH - 1 do
-                    assert.are.equal(dungeon.FLOOR, d.grid[y][x],
-                        ("expected FLOOR at (%d,%d)"):format(x, y))
+                    if d.grid[y][x] == dungeon.FLOOR then
+                        floor_tiles = floor_tiles + 1
+                    else
+                        wall_tiles = wall_tiles + 1
+                    end
                 end
             end
+            -- The procgen always carves at least one internal wall, so
+            -- some interior tiles must be walls; but the floor must stay
+            -- the dominant terrain (otherwise there's no room for the
+            -- player to plant monsters).
+            assert.is_true(wall_tiles > 0,
+                "expected at least one interior wall tile")
+            assert.is_true(floor_tiles > wall_tiles,
+                "expected floor tiles to outnumber interior walls")
         end)
 
         it("places the entrance on a non-corner perimeter tile", function()
@@ -97,6 +109,7 @@ describe("dungeon", function()
     end)
 
     describe("invariants across many seeds", function()
+        local ai = require("src.ai")
         for _, seed in ipairs({ 1, 7, 42, 100, 999, 12345, 2147483646 }) do
             it("seed " .. seed .. " produces a valid dungeon", function()
                 local d = dungeon.generate(seed)
@@ -112,6 +125,14 @@ describe("dungeon", function()
                     d.entrance.x, d.entrance.y,
                     d.treasure.x, d.treasure.y)
                 assert.is_true(dist >= dungeon.MIN_DOOR_TREASURE_DIST)
+                -- Connectivity: the procgen must always leave a path from
+                -- the entrance to the treasure, regardless of how many
+                -- internal walls/pillars it carved.
+                local path = ai.find_path(d,
+                    d.entrance.x, d.entrance.y,
+                    d.treasure.x, d.treasure.y)
+                assert.is_truthy(path,
+                    "expected entrance->treasure to remain reachable")
             end)
         end
     end)
