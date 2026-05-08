@@ -2,13 +2,14 @@
 -- Draws procgen chrome from assets.ui; this module never touches sprite_base.
 -- World-rendering belongs in render.lua.
 
-local grid    = require("src.grid")
-local state   = require("src.state")
-local assets  = require("src.assets")
-local palette = require("src.palette")
-local audio   = require("src.audio")
-local hero    = require("src.hero")
-local monster = require("src.monster")
+local grid     = require("src.grid")
+local state    = require("src.state")
+local assets   = require("src.assets")
+local palette  = require("src.palette")
+local audio    = require("src.audio")
+local hero     = require("src.hero")
+local monster  = require("src.monster")
+local viewport = require("src.viewport")
 
 local M = {}
 
@@ -412,7 +413,7 @@ function M.draw_result(game)
     draw_chip(chip_x + CHIP_W + CHIP_GAP, CHIP_Y, CHIP_W, CHIP_H,
         ("%d L"):format(game.session.losses), CHIP_L_COLOR, font)
 
-    local mx, my = love.mouse.getPosition()
+    local mx, my = viewport.mouse_position()
 
     local retry_hov = M.is_retry_clicked(mx, my)
     if retry_hov and not was_retry_hovered then audio.play("ui_hover") end

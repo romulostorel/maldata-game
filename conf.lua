@@ -7,9 +7,11 @@ function love.conf(t)
     t.console = false
 
     t.window.title = "Inverted Roguelike v1"
+    -- Initial size; main.lua resizes on love.load to fit the desktop.
+    -- Resizable so the user can drag corners or toggle fullscreen with F11.
     t.window.width = 800
     t.window.height = 600
-    t.window.resizable = false
+    t.window.resizable = true
     t.window.vsync = 1
 
     -- Disable unused modules to keep startup lean.

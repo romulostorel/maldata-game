@@ -2,10 +2,11 @@
 -- monsters, the live hero, the planned A* path, and the build-phase
 -- placement cursor. Sole consumer of love.graphics for the world view.
 
-local grid    = require("src.grid")
-local dungeon = require("src.dungeon")
-local state   = require("src.state")
-local assets  = require("src.assets")
+local grid     = require("src.grid")
+local dungeon  = require("src.dungeon")
+local state    = require("src.state")
+local assets   = require("src.assets")
+local viewport = require("src.viewport")
 
 local M = {}
 
@@ -126,7 +127,7 @@ end
 
 function M.draw_build_cursor(game)
     if game.phase ~= state.PHASE_BUILD then return end
-    local mx, my = love.mouse.getPosition()
+    local mx, my = viewport.mouse_position()
     local tx, ty = grid.pixel_to_tile(mx, my)
     if not tx then return end
 

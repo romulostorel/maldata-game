@@ -12,6 +12,7 @@ local assets      = require("src.assets")
 local effects     = require("src.effects")
 local audio       = require("src.audio")
 local audio_debug = require("src.audio_debug")
+local viewport    = require("src.viewport")
 
 local BG_R, BG_G, BG_B = 26 / 255, 26 / 255, 46 / 255 -- #1a1a2e
 
@@ -56,12 +57,19 @@ local function on_combat_event(kind, attacker, target)
 end
 
 function love.load()
-    love.graphics.setBackgroundColor(BG_R, BG_G, BG_B)
     love.graphics.setDefaultFilter("nearest", "nearest")
     love.keyboard.setKeyRepeat(false)
 
+    -- Resize the boot window from the conf.lua default (800×600) to the
+    -- largest integer scale that fits the desktop. Cheap on a fresh boot
+    -- and means the user sees a properly-sized window from frame 1.
+    local sw, sh = viewport.suggest_initial_size()
+    love.window.setMode(sw, sh, { vsync = 1, resizable = true })
+    love.graphics.setBackgroundColor(BG_R, BG_G, BG_B)
+
     assets.load()
     audio.load()
+    viewport.init()
 
     math.randomseed(os.time())
     game = state.new(rand_seed())
@@ -70,12 +78,22 @@ function love.load()
     audio.set_ambient("ambient_build")
 end
 
+function love.resize()
+    viewport.recompute_layout()
+end
+
 function love.update(dt)
     state.update(game, dt, on_combat_event)
     effects.update(dt)
 end
 
 function love.draw()
+    -- Render every game element into the fixed 800×600 viewport canvas.
+    -- Game logic and UI never know the actual window size — they always
+    -- work in canvas coords.
+    love.graphics.setCanvas(viewport.canvas())
+    love.graphics.clear(BG_R, BG_G, BG_B)
+
     render.draw_dungeon(game.dungeon)
     render.draw_monsters(game.monsters)
     render.draw_path(game)
@@ -93,12 +111,24 @@ function love.draw()
     if show_sprite_base then sprite_base.draw_debug() end
     if show_entities then anim_gen.draw_debug() end
     if show_audio then audio_debug.draw() end
+
+    -- Blit the canvas to the actual window: scaled, centered, with
+    -- letterbox bars when window aspect ≠ canvas aspect.
+    love.graphics.setCanvas()
+    love.graphics.clear(0, 0, 0, 1)
+    love.graphics.setColor(1, 1, 1, 1)
+    local s = viewport.scale()
+    local ox, oy = viewport.offset()
+    love.graphics.draw(viewport.canvas(), ox, oy, 0, s, s)
 end
 
 function love.keypressed(key)
     ui.dismiss_tutorial()
     if key == "escape" then
         love.event.quit()
+    elseif key == "f11" then
+        love.window.setFullscreen(not love.window.getFullscreen(), "desktop")
+        viewport.recompute_layout()
     elseif key == "f1" then
         show_palette = not show_palette
     elseif key == "f2" then
@@ -128,6 +158,10 @@ end
 function love.mousepressed(x, y, button)
     -- Left = place / confirm, right = undo placement. Anything else ignored.
     if button ~= 1 and button ~= 2 then return end
+
+    -- Convert window coords to canvas coords; everything downstream works
+    -- in canvas (800×600) space.
+    x, y = viewport.window_to_canvas(x, y)
 
     ui.dismiss_tutorial()
 
