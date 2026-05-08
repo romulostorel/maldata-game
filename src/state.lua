@@ -62,8 +62,11 @@ local function wall_key(x, y)
 end
 
 -- Auto-step cadence during invasion. Tweak here to change the default
--- watch-the-run pacing.
-M.STEP_INTERVAL = 0.25
+-- watch-the-run pacing. Slower than a typical turn timer because each
+-- tick can fire several events at once (mage AoE damage popups, goblin
+-- cluster swings, warrior retaliate, slime split): the player needs to
+-- read them all before the next tick lands.
+M.STEP_INTERVAL = 0.6
 
 local PHASE_ORDER = {
     M.PHASE_BUILD,
