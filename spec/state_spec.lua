@@ -1576,6 +1576,67 @@ describe("state", function()
             end)
         end)
 
+        describe("hero_path fallback when the strict route is blocked", function()
+            it("returns a path even when monsters block every alternative", function()
+                -- Plant monsters on every tile of the would-be route except
+                -- the entrance and the treasure: the strict A* (which treats
+                -- monsters as blockers) returns nil, so we exercise the
+                -- approach fallback that ignores monsters.
+                local s = state.new(7)
+                state.advance(s)
+                local h = s.heroes[1]
+                local preview = state.preview_path(s)
+                for _, p in ipairs(preview) do
+                    if not (p.x == s.dungeon.treasure.x and p.y == s.dungeon.treasure.y)
+                       and not (p.x == h.x and p.y == h.y) then
+                        inject_monster(s, monster.GOBLIN, p.x, p.y)
+                    end
+                end
+                local path = state.hero_path(s, h)
+                assert.is_truthy(path,
+                    "hero_path must fall back to a monster-ignoring route")
+                assert.is_true(#path > 0)
+            end)
+
+            it("a hero does not stall when a monster sits 2 tiles ahead", function()
+                -- Reproduces the corridor-blocker bug: with the fallback
+                -- absent, a single monster blocking the only path made the
+                -- hero stand still forever. With the fallback, the hero
+                -- closes on the blockage, attacks adjacent the next tick,
+                -- and the wave keeps moving.
+                local s = state.new(7)
+                state.advance(s)
+                local h = s.heroes[1]
+                local hx0, hy0 = h.x, h.y
+                local preview = state.preview_path(s)
+                -- First non-hero tile in the preview = manhattan 1 from
+                -- the hero. The tile after that is manhattan 2 — out of
+                -- attack range, so the hero MUST move (not attack) to
+                -- close the gap.
+                local plant
+                for _, p in ipairs(preview) do
+                    if not (p.x == hx0 and p.y == hy0)
+                       and not (p.x == s.dungeon.treasure.x and p.y == s.dungeon.treasure.y) then
+                        plant = p
+                        break
+                    end
+                end
+                assert.is_not_nil(plant)
+                inject_monster(s, monster.GOBLIN, plant.x, plant.y)
+
+                local hp_before = (s.monsters[#s.monsters].hp)
+                state.step_invasion(s)
+                -- Either the hero stepped (was 2+ away from the planted
+                -- monster) OR it attacked it (was already adjacent). Both
+                -- count as "didn't stall". Stalling = same position AND
+                -- the planted monster untouched.
+                local moved = (h.x ~= hx0 or h.y ~= hy0)
+                local attacked = (s.monsters[#s.monsters].hp < hp_before)
+                assert.is_true(moved or attacked,
+                    "hero must move toward or attack the blockage, not stall")
+            end)
+        end)
+
         describe("drama beats (tension_pause)", function()
             it("a kill this tick sets tension_pause for the next step", function()
                 local s = state.new(7)

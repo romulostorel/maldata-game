@@ -510,16 +510,47 @@ local function on_monster_death(state, m)
     end
 end
 
+-- Approach blocker: same as path_blocker but lets monsters be passable.
+-- Used as the fallback A* when no strict path exists — the hero needs to
+-- close on the monster blockade so it can hit "attack" once adjacent.
+-- Peer heroes and orc corpses still block (heroes don't share tiles, and
+-- corpses are physically impassable for their TTL).
+local function approach_blocker(state, self_hero)
+    return function(x, y)
+        for _, h in ipairs(state.heroes) do
+            if h ~= self_hero and h.alive and h.x == x and h.y == y then
+                return true
+            end
+        end
+        for _, c in ipairs(state.corpses) do
+            if c.x == x and c.y == y then return true end
+        end
+        return false
+    end
+end
+
 -- Returns the path the given hero would take this tick. With no `h`,
 -- defaults to the lead hero (preserves backward compat for callers that
 -- only know about a single hero).
+--
+-- Two-stage search: first the strict path that respects monsters as
+-- blockers (so the hero routes AROUND them when there's room), and on
+-- failure a fallback path that ignores monsters (so a hero stuck behind
+-- a 1-tile-wide chokepoint advances toward it instead of standing
+-- still). The fallback is safe at step time because find_target_for_hero
+-- runs first inside step_invasion: any monster at path[1] is already
+-- adjacent and gets attacked before the move resolves.
 function M.hero_path(state, h)
     h = h or state.heroes[1]
     if not h or not h.alive then return nil end
     local goal = state.dungeon.treasure
-    return ai.find_path(state.dungeon,
+    local path = ai.find_path(state.dungeon,
         h.x, h.y, goal.x, goal.y,
         path_blocker(state, h))
+    if path then return path end
+    return ai.find_path(state.dungeon,
+        h.x, h.y, goal.x, goal.y,
+        approach_blocker(state, h))
 end
 
 -- Build-phase route preview: A* from entrance to treasure considering ONLY
