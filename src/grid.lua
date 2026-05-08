@@ -7,10 +7,12 @@ M.WIDTH = 20      -- tiles
 M.HEIGHT = 15     -- tiles
 M.TILE = 32       -- pixels per tile
 
--- Pixel offsets so the 640x480 grid is centered horizontally with space on top
--- for the HUD header. Recomputed from window size if you change those constants.
+-- Pixel offsets so the 640x480 grid is centered horizontally and sits
+-- *below* the 76 px HUD chrome strip with a 4 px breathing gap. Bottom of
+-- the grid lands at y = 80 + 480 = 560, leaving 40 px of canvas tail for
+-- the wave-preview card row.
 M.OFFSET_X = math.floor((800 - M.WIDTH * M.TILE) / 2)  -- 80
-M.OFFSET_Y = 50
+M.OFFSET_Y = 80
 
 -- 1-indexed tile coords (Lua convention). (1,1) is top-left.
 
