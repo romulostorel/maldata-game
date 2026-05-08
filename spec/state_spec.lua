@@ -488,6 +488,48 @@ describe("state", function()
         end)
     end)
 
+    describe("session counters", function()
+        it("starts at zero wins/losses", function()
+            local s = state.new(1)
+            assert.are.equal(0, s.session.wins)
+            assert.are.equal(0, s.session.losses)
+        end)
+
+        it("increments wins on hero_dead transition", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.hero_queue = {}
+            s.heroes[1].hp = 1
+            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
+            inject_monster(s, monster.ORC, mx, my)
+            state.step_invasion(s)
+            assert.are.equal(state.OUTCOME_HERO_DEAD, s.outcome)
+            assert.are.equal(1, s.session.wins)
+            assert.are.equal(0, s.session.losses)
+        end)
+
+        it("increments losses on treasure_stolen transition", function()
+            local s = state.new(7)
+            state.advance(s)
+            for _ = 1, 200 do
+                if s.phase == state.PHASE_RESULT then break end
+                state.step_invasion(s)
+            end
+            assert.are.equal(state.OUTCOME_TREASURE_STOLEN, s.outcome)
+            assert.are.equal(0, s.session.wins)
+            assert.are.equal(1, s.session.losses)
+        end)
+
+        it("preserves session counters across reset", function()
+            local s = state.new(7)
+            s.session.wins = 3
+            s.session.losses = 2
+            state.reset(s, 42)
+            assert.are.equal(3, s.session.wins)
+            assert.are.equal(2, s.session.losses)
+        end)
+    end)
+
     describe("wave_preview", function()
         it("pre-rolls num_heroes heroes at state.new", function()
             local s = state.new(7)

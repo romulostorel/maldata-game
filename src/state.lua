@@ -90,6 +90,9 @@ function M.new(seed)
         outcome = nil,
         auto_step = true,
         step_timer = 0,
+        -- Session counters span the program run, NOT a single dungeon.
+        -- state.reset preserves them so "new dungeon" still tallies.
+        session = { wins = 0, losses = 0 },
     }
     roll_wave(s)
     return s
@@ -117,8 +120,10 @@ local function set_phase(state, new_phase)
     if state.phase == new_phase then return end
     if new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_HERO_DEAD then
         audio.play("victory_sting")
+        state.session.wins = state.session.wins + 1
     elseif new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_TREASURE_STOLEN then
         audio.play("defeat_sting")
+        state.session.losses = state.session.losses + 1
     else
         audio.play("phase_transition")
     end

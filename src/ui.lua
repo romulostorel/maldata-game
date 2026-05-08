@@ -100,9 +100,9 @@ function M.draw_hud(game)
     if game.phase == state.PHASE_BUILD then
         hotkeys = "[LMB] place  [RMB] remove  [SPACE] start invasion  [R] new dungeon  [ESC] quit"
     elseif game.phase == state.PHASE_INVASION then
-        hotkeys = "[SPACE] pause/resume    [.] step    [R] new run    [ESC] quit"
+        hotkeys = "[SPACE] pause/resume    [.] step    [R] new dungeon    [ESC] quit"
     else
-        hotkeys = "[SPACE] back to build    [R] new run    [ESC] quit"
+        hotkeys = "[SPACE] retry same dungeon    [R] new dungeon    [ESC] quit"
     end
     love.graphics.print(hotkeys, 8, 40)
 
@@ -135,6 +135,14 @@ function M.draw_wave_preview(game)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function count_defeated(heroes)
+    local n = 0
+    for _, h in ipairs(heroes) do
+        if not h.alive then n = n + 1 end
+    end
+    return n
+end
+
 function M.draw_result(game)
     if game.phase ~= state.PHASE_RESULT then
         was_restart_hovered = false
@@ -149,6 +157,7 @@ function M.draw_result(game)
     love.graphics.draw(assets.ui.panel, PANEL.x, PANEL.y)
 
     local font = love.graphics.getFont()
+    local W = love.graphics.getWidth()
     local title, color
     if game.outcome == state.OUTCOME_TREASURE_STOLEN then
         title = "TREASURE STOLEN"
@@ -164,9 +173,23 @@ function M.draw_result(game)
     love.graphics.setColor(color)
     local title_scale = 4
     local tw = font:getWidth(title) * title_scale
-    love.graphics.print(title,
-        (love.graphics.getWidth() - tw) / 2, 200,
-        0, title_scale, title_scale)
+    love.graphics.print(title, (W - tw) / 2, 200, 0, title_scale, title_scale)
+
+    -- Wave summary: how many of this wave's heroes the dungeon killed.
+    local summary = ("%d / %d heroes defeated"):format(
+        count_defeated(game.heroes), game.num_heroes)
+    local sum_scale = 1.5
+    local sw = font:getWidth(summary) * sum_scale
+    love.graphics.setColor(palette.bone)
+    love.graphics.print(summary, (W - sw) / 2, 275, 0, sum_scale, sum_scale)
+
+    -- Session tally across this program run (preserved through R/new-dungeon).
+    local sess = ("Session: %d W / %d L"):format(
+        game.session.wins, game.session.losses)
+    local sess_scale = 1.5
+    local ssw = font:getWidth(sess) * sess_scale
+    love.graphics.setColor(palette.stone_light)
+    love.graphics.print(sess, (W - ssw) / 2, 310, 0, sess_scale, sess_scale)
 
     local mx, my = love.mouse.getPosition()
     local hovered = M.is_restart_clicked(mx, my)
@@ -179,7 +202,7 @@ function M.draw_result(game)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(btn_img, RESTART_BTN.x, RESTART_BTN.y)
 
-    local btn_text = "RESTART"
+    local btn_text = "NEW DUNGEON"
     local btn_scale = 2
     local btw = font:getWidth(btn_text) * btn_scale
     local bth = font:getHeight() * btn_scale
