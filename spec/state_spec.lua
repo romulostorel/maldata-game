@@ -351,6 +351,37 @@ describe("state", function()
             assert.is_true(state.try_place_wall(s, t.x, t.y))
             assert.is_false(state.try_place_wall(s, t.x, t.y))
         end)
+
+        it("each placed wall spends WALL_COST from the budget", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            local before = state.remaining_budget(s)
+            assert.is_true(state.try_place_wall(s, t.x, t.y))
+            assert.are.equal(before - state.WALL_COST, state.remaining_budget(s))
+        end)
+
+        it("rejects wall placement when remaining budget is zero", function()
+            -- Spend the full budget on goblins, then try to wall a free tile.
+            local s = state.new(7)
+            local goblin_cost = monster.TYPES[monster.GOBLIN].cost
+            local n_goblins = math.floor(state.BUDGET / goblin_cost)
+            local tiles = free_tiles(s, n_goblins + 1)
+            for i = 1, n_goblins do
+                assert.is_true(state.try_place_monster(s, tiles[i].x, tiles[i].y))
+            end
+            assert.are.equal(0, state.remaining_budget(s))
+            local extra = tiles[n_goblins + 1]
+            assert.is_false(state.try_place_wall(s, extra.x, extra.y))
+        end)
+
+        it("frees budget when a wall is removed", function()
+            local s = state.new(7)
+            local t = free_tiles(s, 1)[1]
+            local before = state.remaining_budget(s)
+            state.try_place_wall(s, t.x, t.y)
+            state.try_remove_wall(s, t.x, t.y)
+            assert.are.equal(before, state.remaining_budget(s))
+        end)
     end)
 
     describe("wall removal", function()

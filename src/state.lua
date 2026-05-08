@@ -26,6 +26,11 @@ M.PHASE_RESULT   = "result"
 -- placement matters, low enough that the player has real agency.
 M.BUDGET = 14
 
+-- Walls also draw from the budget: cheap (1) so a maze is still affordable,
+-- but every carved tile is one fewer goblin. Without a cost the wall tool
+-- dominates: free walls can fully serpentine the path without any tradeoff.
+M.WALL_COST = 1
+
 -- One invasion = a wave of N heroes. The first marches in immediately;
 -- the rest queue up and step onto the entrance one per tick once it's
 -- clear, so the wave staggers naturally without needing tile stacking.
@@ -169,6 +174,9 @@ function M.spent_budget(state)
     for _, m in ipairs(state.monsters) do
         sum = sum + m.cost
     end
+    for _ in pairs(state.placed_walls) do
+        sum = sum + M.WALL_COST
+    end
     return sum
 end
 
@@ -234,6 +242,7 @@ end
 function M.can_place_wall(state, x, y)
     if state.phase ~= M.PHASE_BUILD then return false end
     if not tile_is_free(state, x, y) then return false end
+    if M.WALL_COST > M.remaining_budget(state) then return false end
     return path_survives_wall(state, x, y)
 end
 
