@@ -3,6 +3,7 @@
 
 # LÖVE distributables
 *.love
+dist/
 
 # Editor / OS
 *.swp
