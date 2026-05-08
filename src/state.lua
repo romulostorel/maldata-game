@@ -13,6 +13,7 @@ local ai      = require("src.ai")
 local rand    = require("src.rand")
 local combat  = require("src.combat")
 local audio   = require("src.audio")
+local grid    = require("src.grid")
 
 local M = {}
 
@@ -82,6 +83,17 @@ end
 -- read them all before the next tick lands.
 M.STEP_INTERVAL = 0.6
 
+-- Drama-beat slowdowns. After a tick where anything died, the next tick
+-- is delayed so the kill has room to land emotionally. After a tick where
+-- a hero is within DRAMA_APPROACH_DIST of the treasure, the next tick is
+-- delayed for the same reason — the lead-in to the run-ending hit is the
+-- most tense moment in the loop. Both add to STEP_INTERVAL (not replace
+-- it) and are consumed on the next step. Manual stepping (player presses
+-- '.') ignores them — no need to slow down a player-paced read.
+M.DRAMA_DEATH_PAUSE    = 0.35
+M.DRAMA_APPROACH_PAUSE = 0.30
+M.DRAMA_APPROACH_DIST  = 2
+
 -- Hero count for a given wave number, capped so the entrance queue stays
 -- spawnable. Wave 1 = DEFAULT_NUM_HEROES; +1 per subsequent wave.
 local function hero_count_for_wave(wave)
@@ -150,6 +162,10 @@ function M.new(seed)
         outcome = nil,
         auto_step = true,
         step_timer = 0,
+        -- Carry-over delay applied to the NEXT auto-step interval when a
+        -- dramatic event lands (death, hero closing on treasure). Set at
+        -- the end of step_invasion, consumed by state.update.
+        tension_pause = 0,
         -- Session counters span the program run, NOT a single dungeon.
         -- state.reset preserves them so "new dungeon" still tallies.
         --   best_wave: highest wave the player ever invaded with this run
@@ -216,6 +232,7 @@ local function reset_run(state)
     state.outcome = nil
     state.auto_step = true
     state.step_timer = 0
+    state.tension_pause = 0
     clear_build(state)
     roll_wave(state)
 end
@@ -629,8 +646,41 @@ end
 --   on_event("attack", attacker, target)
 --   on_event("death",  who)
 --   on_event("move",   who)            -- fired after a successful step
+-- Count alive entities across both arrays; used by the tension hook to
+-- detect "anyone died this tick" without needing per-event tracking.
+local function alive_count(arr)
+    local n = 0
+    for _, e in ipairs(arr) do if e.alive then n = n + 1 end end
+    return n
+end
+
+-- Drama beat: any death OR a hero closing on the treasure delays the
+-- next auto-step. Skipped if the wave already ended (phase ≠ INVASION) —
+-- no next step to slow.
+local function update_tension(state, monsters_alive_before, heroes_alive_before)
+    if state.phase ~= M.PHASE_INVASION then return end
+    local pause = 0
+    if alive_count(state.monsters) < monsters_alive_before
+       or alive_count(state.heroes) < heroes_alive_before then
+        pause = math.max(pause, M.DRAMA_DEATH_PAUSE)
+    end
+    local goal = state.dungeon.treasure
+    for _, h in ipairs(state.heroes) do
+        if h.alive
+           and grid.manhattan(h.x, h.y, goal.x, goal.y) <= M.DRAMA_APPROACH_DIST then
+            pause = math.max(pause, M.DRAMA_APPROACH_PAUSE)
+            break
+        end
+    end
+    state.tension_pause = pause
+end
+
 function M.step_invasion(state, on_event)
     if state.phase ~= M.PHASE_INVASION then return end
+
+    -- Snapshot alive counts for the post-step tension hook.
+    local monsters_alive_before = alive_count(state.monsters)
+    local heroes_alive_before   = alive_count(state.heroes)
 
     -- Snapshot monsters BEFORE the hero turn. Mini-slimes pushed during
     -- hero swings (slime split) land in state.monsters but NOT in the
@@ -710,6 +760,12 @@ function M.step_invasion(state, on_event)
     -- player watching the wave roll in.
     spawn_from_queue(state)
 
+    -- Drama beat: any kill or hero-on-the-treasure-doorstep slows the
+    -- next auto-step. Computed before the wave-end check so the carry
+    -- is set even when the killing blow is the last hero falling
+    -- (though it's then cleared by advance_to_next_wave anyway).
+    update_tension(state, monsters_alive_before, heroes_alive_before)
+
     -- End of wave: queue empty AND no living hero left in the dungeon.
     -- The run continues — the player drops back into BUILD with a
     -- refund and the next wave pre-rolled. The run only ends when a
@@ -738,13 +794,20 @@ function M.update(state, dt, on_event)
     if #state.hero_queue == 0 and not any_hero_alive(state) then return end
 
     state.step_timer = state.step_timer + dt
-    while state.step_timer >= M.STEP_INTERVAL do
-        state.step_timer = state.step_timer - M.STEP_INTERVAL
+    -- Effective interval folds in any drama-beat carry-over set at the
+    -- end of the previous step (death this tick, hero closing on the
+    -- treasure). Consumed once on the next step so the cadence returns
+    -- to STEP_INTERVAL unless another dramatic event re-triggers it.
+    local interval = M.STEP_INTERVAL + (state.tension_pause or 0)
+    while state.step_timer >= interval do
+        state.step_timer = state.step_timer - interval
+        state.tension_pause = 0
         M.step_invasion(state, on_event)
         if state.phase ~= M.PHASE_INVASION then
             state.step_timer = 0
             break
         end
+        interval = M.STEP_INTERVAL + (state.tension_pause or 0)
     end
 end
 

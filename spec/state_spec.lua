@@ -1575,6 +1575,63 @@ describe("state", function()
                 assert.are.equal(frozen_y, s.heroes[1].y)
             end)
         end)
+
+        describe("drama beats (tension_pause)", function()
+            it("a kill this tick sets tension_pause for the next step", function()
+                local s = state.new(7)
+                state.advance(s)
+                -- Pin a fragile goblin adjacent to the lead so the swing
+                -- this tick definitely kills something.
+                local hx, hy = s.heroes[1].x, s.heroes[1].y
+                local mx, my = first_floor_neighbor(s, hx, hy)
+                local g = inject_monster(s, monster.GOBLIN, mx, my); g.hp = 1
+                state.step_invasion(s)
+                assert.is_false(g.alive)
+                assert.is_true(s.tension_pause >= state.DRAMA_DEATH_PAUSE)
+            end)
+
+            it("a hero on the treasure doorstep sets tension_pause", function()
+                -- Move the lead hero to a tile within DRAMA_APPROACH_DIST
+                -- of the treasure manually, then run a step. No combat:
+                -- we want the approach trigger isolated.
+                local s = state.new(7)
+                state.advance(s)
+                local t = s.dungeon.treasure
+                -- Find any FLOOR tile within range of the treasure.
+                local target_x, target_y
+                for dy = -state.DRAMA_APPROACH_DIST, state.DRAMA_APPROACH_DIST do
+                    for dx = -state.DRAMA_APPROACH_DIST, state.DRAMA_APPROACH_DIST do
+                        local nx, ny = t.x + dx, t.y + dy
+                        if (math.abs(dx) + math.abs(dy)) > 0
+                           and (math.abs(dx) + math.abs(dy)) <= state.DRAMA_APPROACH_DIST
+                           and s.dungeon.grid[ny] and s.dungeon.grid[ny][nx] == dungeon.FLOOR
+                           and not (nx == t.x and ny == t.y)
+                           and not (nx == s.dungeon.entrance.x and ny == s.dungeon.entrance.y) then
+                            target_x, target_y = nx, ny
+                            break
+                        end
+                    end
+                    if target_x then break end
+                end
+                assert.is_not_nil(target_x, "no eligible approach tile for seed 7")
+                s.heroes[1].x = target_x
+                s.heroes[1].y = target_y
+                state.step_invasion(s)
+                if s.phase == state.PHASE_INVASION then
+                    assert.is_true(s.tension_pause >= state.DRAMA_APPROACH_PAUSE)
+                end
+            end)
+
+            it("tension_pause is consumed by the next auto-step", function()
+                local s = state.new(7)
+                state.advance(s)
+                s.tension_pause = 0.5
+                -- Effective interval = STEP_INTERVAL + 0.5. dt enough only
+                -- for the slow tick.
+                state.update(s, state.STEP_INTERVAL + 0.5 + 0.001)
+                assert.are.equal(0, s.tension_pause)
+            end)
+        end)
     end)
 
     describe("preview_path", function()
