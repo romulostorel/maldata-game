@@ -74,12 +74,26 @@ local PHASE_ORDER = {
 -- Pre-roll the next wave so the player sees the heroes they'll face during
 -- BUILD. The same hero objects are promoted to heroes/queue at invasion
 -- start (no re-roll), so what you see is exactly what shows up.
+--
+-- Lead-warrior swap: if any Warrior is rolled, it moves to slot 1 of the
+-- preview. Its tank passive (high HP + retaliate) makes it the natural
+-- entrance soak; the player sees the new order during BUILD so the preview
+-- matches the invasion exactly.
 local function roll_wave(state)
     state.wave_preview = {}
     local entrance = state.dungeon.entrance
     for _ = 1, state.num_heroes do
         table.insert(state.wave_preview,
             hero.new(state.rng, entrance.x, entrance.y))
+    end
+    if state.wave_preview[1] and state.wave_preview[1].class ~= hero.WARRIOR then
+        for i = 2, #state.wave_preview do
+            if state.wave_preview[i].class == hero.WARRIOR then
+                state.wave_preview[1], state.wave_preview[i] =
+                    state.wave_preview[i], state.wave_preview[1]
+                break
+            end
+        end
     end
 end
 
@@ -402,7 +416,22 @@ function M.hero_path(state, h)
         path_blocker(state, h))
 end
 
-local function find_monster_in_range(state, h)
+-- Class-aware target selection for heroes:
+--   Archer  → focus-fire the lowest-HP monster in range (counters the
+--             goblin cluster + slime mini-spam by killing one at a time).
+--   default → first monster in range (iteration order).
+local function find_target_for_hero(state, h)
+    local best, best_hp = nil, math.huge
+    if h.class == hero.ARCHER then
+        for _, m in ipairs(state.monsters) do
+            if m.alive and combat.in_range(h, m) then
+                if m.hp < best_hp then
+                    best, best_hp = m, m.hp
+                end
+            end
+        end
+        return best
+    end
     for _, m in ipairs(state.monsters) do
         if m.alive and combat.in_range(h, m) then return m end
     end
@@ -414,6 +443,57 @@ local function find_hero_in_range(state, m)
         if h.alive and combat.in_range(m, h) then return h end
     end
     return nil
+end
+
+-- Centralized "do an attack and dispatch its events". Routes the dealt
+-- damage through on_event, fires the death event, and triggers the
+-- monster-side death payoff (orc corpse / slime split). Used by every
+-- attack flow: hero swing, mage splash, monster swing, warrior retaliate.
+local function apply_attack(state, attacker, target, dmg, on_event)
+    local dealt = combat.attack(attacker, target, dmg)
+    if on_event then
+        on_event("attack", attacker, target, dealt)
+        if not target.alive then on_event("death", target) end
+    end
+    if not target.alive and target.type then
+        on_monster_death(state, target)
+    end
+end
+
+-- Mage AoE: snapshot cardinal-adjacent alive monsters BEFORE the main hit
+-- lands, then deal floor(atk/MAGE_SPLASH_DIVISOR) to each surviving entry.
+-- Snapshotting before the main hit is the design crux — if the main hit
+-- kills a slime, the split spawns mini-slimes at slime's neighbors AND
+-- those minis would otherwise be in range of the splash. Pre-snapshotting
+-- lets slime split actually counter Mage AoE.
+local function gather_splash_candidates(state, target)
+    local out = {}
+    for _, m in ipairs(state.monsters) do
+        if m ~= target and m.alive
+           and math.abs(m.x - target.x) + math.abs(m.y - target.y) == 1 then
+            table.insert(out, m)
+        end
+    end
+    return out
+end
+
+local function apply_mage_splash(state, mage, candidates, on_event)
+    local splash = math.floor(mage.atk / hero.MAGE_SPLASH_DIVISOR)
+    if splash <= 0 then return end
+    for _, m in ipairs(candidates) do
+        if m.alive then apply_attack(state, mage, m, splash, on_event) end
+    end
+end
+
+local function hero_attack(state, h, target, on_event)
+    local mage_candidates = nil
+    if h.class == hero.MAGE then
+        mage_candidates = gather_splash_candidates(state, target)
+    end
+    apply_attack(state, h, target, h.atk, on_event)
+    if mage_candidates then
+        apply_mage_splash(state, h, mage_candidates, on_event)
+    end
 end
 
 local function entrance_occupied(state)
@@ -463,21 +543,16 @@ function M.step_invasion(state, on_event)
     local pre_corpses = {}
     for i, c in ipairs(state.corpses) do pre_corpses[i] = c end
 
-    -- Hero turns: each alive hero attacks the first monster in range, or
-    -- steps along its own path. Iterating a snapshot keeps the order
+    -- Hero turns: each alive hero attacks via class-aware targeting (Archer
+    -- focus-fires; Mage adds splash). Iterating a snapshot keeps the order
     -- deterministic even if state.heroes is mutated mid-loop.
     local snapshot = {}
     for i, h in ipairs(state.heroes) do snapshot[i] = h end
     for _, h in ipairs(snapshot) do
         if h.alive then
-            local target = find_monster_in_range(state, h)
+            local target = find_target_for_hero(state, h)
             if target then
-                local dmg = combat.attack(h, target)
-                if on_event then
-                    on_event("attack", h, target, dmg)
-                    if not target.alive then on_event("death", target) end
-                end
-                if not target.alive then on_monster_death(state, target) end
+                hero_attack(state, h, target, on_event)
             else
                 local path = M.hero_path(state, h)
                 if path and #path > 0 then
@@ -499,16 +574,19 @@ function M.step_invasion(state, on_event)
     -- Iterates the pre-hero snapshot so freshly split mini-slimes don't
     -- swing the same tick they spawn. Goblin cluster bonus is computed at
     -- swing time against state.monsters (post-hero), so a goblin loses its
-    -- bonus the moment a neighbor falls.
+    -- bonus the moment a neighbor falls. Warrior retaliate fires inline:
+    -- if the struck hero is a Warrior that survived and the attacker is
+    -- still alive, it takes target.retaliate dmg back — and that retaliate
+    -- can itself kill the monster (triggering its death payoff).
     for _, m in ipairs(pre_monsters) do
         if m.alive then
             local target = find_hero_in_range(state, m)
             if target then
-                local dmg = combat.attack(m, target,
-                    monster.effective_atk(m, state.monsters))
-                if on_event then
-                    on_event("attack", m, target, dmg)
-                    if not target.alive then on_event("death", target) end
+                local dmg = monster.effective_atk(m, state.monsters)
+                apply_attack(state, m, target, dmg, on_event)
+                if target.alive and m.alive
+                   and target.retaliate and target.retaliate > 0 then
+                    apply_attack(state, target, m, target.retaliate, on_event)
                 end
             end
         end

@@ -21,6 +21,16 @@ describe("hero", function()
             assert.are.equal(6, m.atk); assert.are.equal(2, m.atk_var)
             assert.are.equal(1, m.range)
         end)
+
+        it("only Warrior has a retaliate value (1); others are 0", function()
+            assert.are.equal(1, hero.CLASSES[hero.WARRIOR].retaliate)
+            assert.are.equal(0, hero.CLASSES[hero.ARCHER].retaliate)
+            assert.are.equal(0, hero.CLASSES[hero.MAGE].retaliate)
+        end)
+
+        it("exposes a positive Mage splash divisor", function()
+            assert.is_true(hero.MAGE_SPLASH_DIVISOR >= 2)
+        end)
     end)
 
     describe("new", function()
@@ -30,6 +40,21 @@ describe("hero", function()
             assert.are.equal(7, h.y)
             assert.is_true(h.alive)
             assert.are.equal(h.max_hp, h.hp)
+        end)
+
+        it("copies the class's retaliate value onto the entity", function()
+            -- Sample seeds until each class has been observed at least once.
+            local seen = {}
+            for seed = 1, 200 do
+                local h = hero.new(rand.new(seed), 1, 1)
+                seen[h.class] = h.retaliate
+                if seen[hero.WARRIOR] and seen[hero.ARCHER] and seen[hero.MAGE] then
+                    break
+                end
+            end
+            assert.are.equal(hero.CLASSES[hero.WARRIOR].retaliate, seen[hero.WARRIOR])
+            assert.are.equal(hero.CLASSES[hero.ARCHER].retaliate,  seen[hero.ARCHER])
+            assert.are.equal(hero.CLASSES[hero.MAGE].retaliate,    seen[hero.MAGE])
         end)
 
         it("rolls a known class and stays within the variance band", function()

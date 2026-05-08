@@ -5,6 +5,7 @@ local dungeon = require("src.dungeon")
 local monster = require("src.monster")
 local grid = require("src.grid")
 local ai = require("src.ai")
+local hero = require("src.hero")
 
 -- First n interior tiles (2..W-1, 2..H-1) that aren't the treasure for the
 -- given state. Stable per-seed so tests are deterministic.
@@ -42,6 +43,47 @@ local function inject_monster(s, type_key, x, y)
     local m = monster.new(type_key, x, y)
     table.insert(s.monsters, m)
     return m
+end
+
+-- Build a synthetic hero of a chosen class at (x, y) with full class HP/ATK.
+-- Used to pin invasion tests to a specific class regardless of the seed's
+-- roll (and bypass the lead-warrior swap when verifying default behaviors).
+local function make_hero(class_key, x, y)
+    local c = hero.CLASSES[class_key]
+    return {
+        class = class_key,
+        x = x, y = y,
+        hp = c.hp, max_hp = c.hp,
+        atk = c.atk,
+        range = c.range,
+        retaliate = c.retaliate,
+        alive = true,
+    }
+end
+
+-- Drop a synthetic hero on the first interior floor tile that has at least
+-- `min_neighbors` cardinal-adjacent FLOOR tiles available (excluding
+-- entrance/treasure). Returns the hero plus the list of those neighbor
+-- positions. Lets class-behavior tests place 2+ monsters around the hero
+-- regardless of where the seed put the entrance.
+local function inject_hero_at_open_interior(s, class_key, min_neighbors)
+    local CARDINAL = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
+    for _, t in ipairs(free_tiles(s, 200)) do
+        local nbrs = {}
+        for _, d in ipairs(CARDINAL) do
+            local nx, ny = t.x + d[1], t.y + d[2]
+            if s.dungeon.grid[ny] and s.dungeon.grid[ny][nx] == dungeon.FLOOR
+               and not (nx == s.dungeon.entrance.x and ny == s.dungeon.entrance.y)
+               and not (nx == s.dungeon.treasure.x and ny == s.dungeon.treasure.y) then
+                table.insert(nbrs, { x = nx, y = ny })
+            end
+        end
+        if #nbrs >= min_neighbors then
+            local h = make_hero(class_key, t.x, t.y)
+            table.insert(s.heroes, h)
+            return h, nbrs
+        end
+    end
 end
 
 describe("state", function()
@@ -534,6 +576,245 @@ describe("state", function()
         end)
     end)
 
+    describe("lead-warrior swap", function()
+        it("promotes a Warrior to slot 1 of the wave preview if rolled", function()
+            -- Sample seeds and verify whenever the wave contains a Warrior,
+            -- the warrior is in slot 1 of the preview.
+            local found = false
+            for seed = 1, 200 do
+                local s = state.new(seed)
+                local has_warrior = false
+                for _, h in ipairs(s.wave_preview) do
+                    if h.class == hero.WARRIOR then has_warrior = true; break end
+                end
+                if has_warrior then
+                    assert.are.equal(hero.WARRIOR, s.wave_preview[1].class,
+                        ("seed %d had a warrior but it was not at slot 1"):format(seed))
+                    found = true
+                end
+            end
+            assert.is_true(found, "no warrior rolled in 200 seeds — sample size issue")
+        end)
+
+        it("preserves preview order when no Warrior is present", function()
+            -- Construct a non-warrior wave by directly setting wave_preview;
+            -- if roll_wave is invoked again (advance), it will reroll. We
+            -- instead just verify the swap is a no-op when no warrior exists.
+            local s = state.new(1)
+            s.wave_preview = {
+                make_hero(hero.MAGE,   s.dungeon.entrance.x, s.dungeon.entrance.y),
+                make_hero(hero.ARCHER, s.dungeon.entrance.x, s.dungeon.entrance.y),
+                make_hero(hero.MAGE,   s.dungeon.entrance.x, s.dungeon.entrance.y),
+            }
+            local before = { s.wave_preview[1], s.wave_preview[2], s.wave_preview[3] }
+            state.advance(s)
+            assert.are.equal(before[1], s.heroes[1])
+            assert.are.equal(before[2], s.hero_queue[1])
+            assert.are.equal(before[3], s.hero_queue[2])
+        end)
+    end)
+
+    describe("warrior retaliate", function()
+        it("deals retaliate dmg to the adjacent attacker after being hit", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h = make_hero(hero.WARRIOR,
+                s.dungeon.entrance.x, s.dungeon.entrance.y)
+            table.insert(s.heroes, h)
+            local nx, ny = first_floor_neighbor(s, h.x, h.y)
+            local g = inject_monster(s, monster.GOBLIN, nx, ny)
+            local g_hp_before = g.hp
+            state.step_invasion(s)
+            -- Hero attacks goblin (-h.atk), goblin (alive) attacks warrior
+            -- (-g.atk), warrior retaliates (-h.retaliate).
+            assert.are.equal(g_hp_before - h.atk - h.retaliate, g.hp)
+        end)
+
+        it("does NOT retaliate if the attack killed the warrior", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h = make_hero(hero.WARRIOR,
+                s.dungeon.entrance.x, s.dungeon.entrance.y)
+            h.hp = 1
+            table.insert(s.heroes, h)
+            local nx, ny = first_floor_neighbor(s, h.x, h.y)
+            local orc = inject_monster(s, monster.ORC, nx, ny)
+            local orc_hp_before = orc.hp
+            state.step_invasion(s)
+            assert.is_false(h.alive)
+            -- Orc took only h.atk dmg from the swing, no retaliate.
+            assert.are.equal(orc_hp_before - h.atk, orc.hp)
+        end)
+
+        it("retaliate kill on an Orc still triggers the corpse death payoff", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h = make_hero(hero.WARRIOR,
+                s.dungeon.entrance.x, s.dungeon.entrance.y)
+            table.insert(s.heroes, h)
+            local nx, ny = first_floor_neighbor(s, h.x, h.y)
+            local orc = inject_monster(s, monster.ORC, nx, ny)
+            -- Set orc HP so the warrior swing alone leaves it alive but
+            -- the +1 retaliate kills it on the way out.
+            orc.hp = h.atk + h.retaliate
+            state.step_invasion(s)
+            assert.is_false(orc.alive)
+            assert.is_true(#s.corpses >= 1)
+            local found = false
+            for _, c in ipairs(s.corpses) do
+                if c.x == nx and c.y == ny then found = true end
+            end
+            assert.is_true(found, "expected a corpse at the orc's tile")
+        end)
+
+        it("non-warrior heroes do not retaliate", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h = make_hero(hero.ARCHER,
+                s.dungeon.entrance.x, s.dungeon.entrance.y)
+            table.insert(s.heroes, h)
+            local nx, ny = first_floor_neighbor(s, h.x, h.y)
+            local g = inject_monster(s, monster.GOBLIN, nx, ny)
+            local g_hp_before = g.hp
+            state.step_invasion(s)
+            -- Only the archer's swing damage; no retaliate.
+            assert.are.equal(g_hp_before - h.atk, g.hp)
+        end)
+    end)
+
+    describe("archer focus-fire", function()
+        it("targets the lowest-HP monster among those in range", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h, nbrs = inject_hero_at_open_interior(s, hero.ARCHER, 2)
+            assert.is_not_nil(h)
+
+            local high = inject_monster(s, monster.GOBLIN, nbrs[1].x, nbrs[1].y)
+            local low  = inject_monster(s, monster.GOBLIN, nbrs[2].x, nbrs[2].y)
+            high.hp = 5
+            low.hp  = 1
+
+            state.step_invasion(s)
+            assert.is_false(low.alive,  "archer should have killed the low-HP goblin")
+            assert.are.equal(5, high.hp, "high-HP goblin should be untouched by hero swing")
+        end)
+    end)
+
+    describe("mage AoE splash", function()
+        it("splashes floor(atk / divisor) to each cardinal-adjacent monster", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h = make_hero(hero.MAGE,
+                s.dungeon.entrance.x, s.dungeon.entrance.y)
+            -- Pin atk so the splash math is deterministic.
+            h.atk = 6
+            table.insert(s.heroes, h)
+            -- Main target adjacent to mage; splash victims adjacent to main.
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            local main = inject_monster(s, monster.SLIME, mx, my)
+            -- Place two splash candidates around the main target. Skip the
+            -- mage's own tile (back-direction).
+            local dirs = { { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }
+            local splash_targets = {}
+            for _, d in ipairs(dirs) do
+                local nx, ny = mx + d[1], my + d[2]
+                if not (nx == h.x and ny == h.y)
+                   and s.dungeon.grid[ny] and s.dungeon.grid[ny][nx] == dungeon.FLOOR
+                   and not (nx == s.dungeon.entrance.x and ny == s.dungeon.entrance.y)
+                   and not (nx == s.dungeon.treasure.x and ny == s.dungeon.treasure.y) then
+                    table.insert(splash_targets,
+                        inject_monster(s, monster.GOBLIN, nx, ny))
+                    if #splash_targets == 2 then break end
+                end
+            end
+            assert.is_true(#splash_targets > 0, "no splash tiles available for this seed")
+
+            local main_hp_before   = main.hp
+            local splash_hp_before = splash_targets[1].hp
+            state.step_invasion(s)
+
+            local expected_splash = math.floor(h.atk / hero.MAGE_SPLASH_DIVISOR)
+            -- Main took full damage. (Slime might split if killed; if main
+            -- survived, splash victims took expected_splash dmg.)
+            if main.alive then
+                assert.are.equal(main_hp_before - h.atk, main.hp)
+            end
+            for _, t in ipairs(splash_targets) do
+                if t.alive then
+                    assert.are.equal(splash_hp_before - expected_splash, t.hp)
+                end
+            end
+        end)
+
+        it("does not splash when atk is below 2 * divisor (splash floor = 0)", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            local h = make_hero(hero.MAGE,
+                s.dungeon.entrance.x, s.dungeon.entrance.y)
+            h.atk = 1
+            table.insert(s.heroes, h)
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            local main = inject_monster(s, monster.GOBLIN, mx, my)
+            -- Find any cardinal neighbor of main (other than mage's tile).
+            local nx, ny
+            for _, d in ipairs({ { 0, 1 }, { 1, 0 }, { 0, -1 }, { -1, 0 } }) do
+                local cx, cy = mx + d[1], my + d[2]
+                if not (cx == h.x and cy == h.y)
+                   and s.dungeon.grid[cy] and s.dungeon.grid[cy][cx] == dungeon.FLOOR
+                   and not (cx == s.dungeon.entrance.x and cy == s.dungeon.entrance.y)
+                   and not (cx == s.dungeon.treasure.x and cy == s.dungeon.treasure.y) then
+                    nx, ny = cx, cy
+                    break
+                end
+            end
+            assert.is_not_nil(nx, "no neighbor tile available for this seed")
+            local witness = inject_monster(s, monster.GOBLIN, nx, ny)
+            local witness_hp = witness.hp
+            state.step_invasion(s)
+            assert.are.equal(witness_hp, witness.hp)
+        end)
+
+        it("snapshots splash candidates before applying — mini-slime spawned mid-attack is not splashed", function()
+            local s = state.new(7)
+            state.advance(s)
+            s.heroes = {}
+            s.hero_queue = {}
+            -- Mage on an interior tile so the slime placed at a neighbor
+            -- has 3 free cardinals for split spawn (not just 1 from the
+            -- entrance corridor).
+            local h = inject_hero_at_open_interior(s, hero.MAGE, 1)
+            assert.is_not_nil(h)
+            h.atk = 50
+            local mx, my = first_floor_neighbor(s, h.x, h.y)
+            local slime = inject_monster(s, monster.SLIME, mx, my)
+            state.step_invasion(s)
+            assert.is_false(slime.alive)
+            local found_mini = false
+            for _, m in ipairs(s.monsters) do
+                if m.is_mini and m.alive then
+                    found_mini = true
+                    assert.are.equal(monster.MINI_SLIME.hp, m.hp,
+                        "mini-slime took splash damage on its spawn tick")
+                end
+            end
+            assert.is_true(found_mini, "expected at least one mini-slime to spawn")
+        end)
+    end)
+
     describe("orc corpse passive", function()
         it("spawns a corpse on the tile when an orc dies", function()
             local s = state.new(7)
@@ -929,6 +1210,10 @@ describe("state", function()
             it("hero attacks an adjacent monster instead of moving", function()
                 local s = state.new(7)
                 state.advance(s)
+                -- Pin retaliate to 0 so this test stays about the hero's
+                -- main swing, regardless of which class the seed promotes
+                -- to lead. (Warrior retaliate would land the goblin at 0 HP.)
+                s.heroes[1].retaliate = 0
                 local hx, hy = s.heroes[1].x, s.heroes[1].y
                 local mx, my = first_floor_neighbor(s, hx, hy)
                 local m = inject_monster(s, monster.GOBLIN, mx, my)
