@@ -1479,4 +1479,53 @@ describe("state", function()
             end)
         end)
     end)
+
+    describe("preview_path", function()
+        it("returns a path from entrance to treasure during build", function()
+            local s = state.new(11)
+            local path = state.preview_path(s)
+            assert.is_truthy(path)
+            assert.is_true(#path > 0)
+            local last = path[#path]
+            assert.are.equal(s.dungeon.treasure.x, last.x)
+            assert.are.equal(s.dungeon.treasure.y, last.y)
+        end)
+
+        it("ignores monsters (heroes fight through them at runtime)", function()
+            local s = state.new(11)
+            -- Plant a monster on every tile of the unobstructed path; the
+            -- preview must still return a path because monsters aren't
+            -- treated as blockers in the build forecast.
+            for _, p in ipairs(state.preview_path(s)) do
+                if not (p.x == s.dungeon.treasure.x and p.y == s.dungeon.treasure.y) then
+                    table.insert(s.monsters, monster.new(monster.GOBLIN, p.x, p.y))
+                end
+            end
+            local path = state.preview_path(s)
+            assert.is_truthy(path)
+        end)
+
+        it("reroutes when a wall is placed on the current route", function()
+            local s = state.new(11)
+            local before = state.preview_path(s)
+            assert.is_truthy(before)
+            -- Place a wall on the second step of the previewed path. It
+            -- should be a legal placement (path_survives_wall keeps
+            -- connectivity) and the new path should differ.
+            local cut = before[2]
+            assert.is_true(state.try_place_wall(s, cut.x, cut.y))
+            local after = state.preview_path(s)
+            assert.is_truthy(after)
+            local same = (#after == #before)
+            if same then
+                for i, p in ipairs(after) do
+                    if p.x ~= before[i].x or p.y ~= before[i].y then
+                        same = false
+                        break
+                    end
+                end
+            end
+            assert.is_false(same)
+        end)
+    end)
 end)

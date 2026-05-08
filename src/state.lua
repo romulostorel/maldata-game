@@ -419,6 +419,18 @@ function M.hero_path(state, h)
         path_blocker(state, h))
 end
 
+-- Build-phase route preview: A* from entrance to treasure considering ONLY
+-- walls (player + perimeter). Monsters are intentionally NOT blockers — at
+-- runtime heroes fight through monster tiles, so the route a placed wall
+-- creates is the same whether or not monsters sit on it. The build cursor
+-- shows this path so the player sees how each wall reshapes it before
+-- committing. Returns nil if no path exists (shouldn't happen since
+-- can_place_wall guards connectivity).
+function M.preview_path(state)
+    local e, t = state.dungeon.entrance, state.dungeon.treasure
+    return ai.find_path(state.dungeon, e.x, e.y, t.x, t.y)
+end
+
 -- Class-aware target selection for heroes:
 --   Archer  → focus-fire the lowest-HP monster in range (counters the
 --             goblin cluster + slime mini-spam by killing one at a time).

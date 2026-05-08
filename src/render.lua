@@ -10,9 +10,13 @@ local viewport = require("src.viewport")
 
 local M = {}
 
-local COLOR_CURSOR_OK  = { 0.40, 1.00, 0.50, 0.30 }
-local COLOR_CURSOR_BAD = { 1.00, 0.40, 0.40, 0.30 }
-local COLOR_PATH_DOT   = { 1.00, 1.00, 1.00, 0.20 }
+local COLOR_CURSOR_OK     = { 0.40, 1.00, 0.50, 0.30 }
+local COLOR_CURSOR_BAD    = { 1.00, 0.40, 0.40, 0.30 }
+local COLOR_PATH_DOT      = { 1.00, 1.00, 1.00, 0.20 }
+-- Build-phase preview path: warm gold so it reads as "planned" — distinct
+-- from the white live-trace used during invasion. Higher alpha than the
+-- live dots because there's no entity sprite competing with it during build.
+local COLOR_PATH_PREVIEW  = { 1.00, 0.85, 0.30, 0.45 }
 
 -- 24×24 entity sprites are blitted with a 4-px inset so they sit centered
 -- inside their 32×32 tile.
@@ -178,23 +182,35 @@ function M.draw_corpses(corpses)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function draw_path_dots(path, color, radius_factor)
+    love.graphics.setColor(color)
+    for _, p in ipairs(path) do
+        local px, py = grid.tile_to_pixel(p.x, p.y)
+        love.graphics.circle("fill",
+            px + grid.TILE / 2, py + grid.TILE / 2,
+            grid.TILE * radius_factor)
+    end
+end
+
 function M.draw_path(game)
-    if game.phase ~= state.PHASE_INVASION then return end
-    love.graphics.setColor(COLOR_PATH_DOT)
-    for _, h in ipairs(game.heroes) do
-        if h.alive then
-            local path = state.hero_path(game, h)
-            if path then
-                for _, p in ipairs(path) do
-                    local px, py = grid.tile_to_pixel(p.x, p.y)
-                    love.graphics.circle("fill",
-                        px + grid.TILE / 2, py + grid.TILE / 2,
-                        grid.TILE * 0.10)
-                end
+    if game.phase == state.PHASE_INVASION then
+        for _, h in ipairs(game.heroes) do
+            if h.alive then
+                local path = state.hero_path(game, h)
+                if path then draw_path_dots(path, COLOR_PATH_DOT, 0.10) end
             end
         end
+        love.graphics.setColor(1, 1, 1, 1)
+        return
     end
-    love.graphics.setColor(1, 1, 1, 1)
+    -- Build phase: render the would-be route from entrance to treasure so
+    -- the player sees how each wall reshapes it before committing. Slightly
+    -- bigger dots than the invasion trace so the preview reads at a glance.
+    if game.phase == state.PHASE_BUILD then
+        local path = state.preview_path(game)
+        if path then draw_path_dots(path, COLOR_PATH_PREVIEW, 0.13) end
+        love.graphics.setColor(1, 1, 1, 1)
+    end
 end
 
 function M.draw_heroes(heroes)
