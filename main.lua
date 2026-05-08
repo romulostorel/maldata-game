@@ -106,6 +106,7 @@ function love.draw()
 
     ui.draw_hp_bars(game)
     ui.draw_hud(game)
+    ui.draw_tool_tooltip(game)
     ui.draw_result(game)
     ui.draw_tutorial(game)
 

@@ -13,6 +13,22 @@ local viewport = require("src.viewport")
 
 local M = {}
 
+-- One-line passive labels for the wave preview cards. Kept short (target
+-- ~18 chars) so each card stays narrow enough that 3 fit side by side.
+local PASSIVE_HERO = {
+    [hero.WARRIOR] = "lead · retaliate 1",
+    [hero.ARCHER]  = "focus low-HP",
+    [hero.MAGE]    = "AoE splash",
+}
+
+-- Tooltip text for the build toolbar. Wider since the tooltip box auto-sizes
+-- to its label, so these can be more descriptive than the hero one-liners.
+local PASSIVE_MONSTER = {
+    [monster.GOBLIN] = "+1 ATK per adjacent goblin",
+    [monster.ORC]    = "corpse blocks tile for 2 turns after death",
+    [monster.SLIME]  = "splits into 2 mini-slimes on death",
+}
+
 local BAR_W        = 24       -- matches assets.HP_BAR_W
 local BAR_H        = 6        -- matches assets.HP_BAR_H
 local BAR_INNER_W  = BAR_W - 2
@@ -245,14 +261,64 @@ function M.tool_at(mx, my)
     return nil
 end
 
+-- Tooltip below the chrome strip (y=80, in the top perimeter row of the
+-- grid) showing the hovered monster's passive. Wall cells get no tooltip
+-- — their behavior is self-evident. Anchored to the hovered cell's x but
+-- clipped to the canvas right edge so a far-right hover still fits on
+-- screen. Drawn last so it sits above the dungeon and HP bars.
+function M.draw_tool_tooltip(game)
+    if game.phase ~= state.PHASE_BUILD then return end
+    local mx, my = viewport.mouse_position()
+    if my < TOOLBAR_Y or my > TOOLBAR_Y + CELL_SIZE then return end
+
+    local hovered, cell_x
+    for i, tool in ipairs(tool_list()) do
+        local cx = TOOLBAR_X + (i - 1) * TOOL_PAIR_W
+        if mx >= cx and mx <= cx + CELL_SIZE then
+            hovered, cell_x = tool, cx
+            break
+        end
+    end
+    if not hovered or hovered.kind ~= state.TOOL_MONSTER then return end
+
+    local body = PASSIVE_MONSTER[hovered.type_key]
+    if not body then return end
+
+    local title = hovered.type_key:upper()
+    local font = love.graphics.getFont()
+    local pad_x, pad_y = 6, 4
+    local line_h = 12
+    local tw = math.max(font:getWidth(title), font:getWidth(body))
+    local tip_w = tw + pad_x * 2
+    local tip_h = line_h * 2 + pad_y * 2 + 2  -- title + body + small gap
+
+    local tip_x = math.min(cell_x, viewport.CANVAS_W - tip_w - 4)
+    local tip_y = 80
+
+    love.graphics.setColor(palette.stone_dark)
+    love.graphics.rectangle("fill", tip_x, tip_y, tip_w, tip_h)
+    love.graphics.setColor(palette.gold_accent)
+    love.graphics.rectangle("line",
+        tip_x + 0.5, tip_y + 0.5, tip_w - 1, tip_h - 1)
+
+    love.graphics.setColor(palette.paper)
+    love.graphics.print(title, tip_x + pad_x, tip_y + pad_y)
+    love.graphics.setColor(palette.bone)
+    love.graphics.print(body, tip_x + pad_x, tip_y + pad_y + line_h + 2)
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 -- Wave preview shown during BUILD: a row of mini-cards (sprite + class +
--- stats) in the strip below the grid. Each card carries the class color
--- on its border so the trio reads at a glance — sprite identifies the
--- threat, numbers tell you how dangerous. Compact form factor (140×34)
--- to fit cleanly in the 40 px tail of canvas under the grid.
-local CARD_W, CARD_H = 140, 34
+-- stats + passive) in the strip below the grid. Each card carries the
+-- class color on its border so the trio reads at a glance — sprite + name
+-- identify the threat, numbers tell you how dangerous, passive line tells
+-- you what to counter. Card grew from 34 to 42 tall to fit the third line;
+-- the 4 px overlap with the grid's bottom perimeter wall is acceptable
+-- since that row is purely decorative.
+local CARD_W, CARD_H = 160, 42
 local CARD_GAP = 20
-local CARD_Y = 564
+local CARD_Y = 556
 
 local function draw_hero_card(x, y, h, font)
     local class_color = hero.CLASSES[h.class].color
@@ -267,12 +333,15 @@ local function draw_hero_card(x, y, h, font)
     love.graphics.draw(sprite, x + 5, y + math.floor((CARD_H - 24) / 2))
 
     love.graphics.setColor(class_color)
-    love.graphics.print(h.class:upper(), x + 36, y + 4)
+    love.graphics.print(h.class:upper(), x + 36, y + 3)
 
     love.graphics.setColor(palette.bone)
     love.graphics.print(
         ("HP %d  ATK %d"):format(h.hp, h.atk),
-        x + 36, y + 18)
+        x + 36, y + 15)
+
+    love.graphics.setColor(palette.stone_light)
+    love.graphics.print(PASSIVE_HERO[h.class] or "", x + 36, y + 27)
 end
 
 function M.draw_wave_preview(game)
