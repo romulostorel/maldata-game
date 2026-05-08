@@ -34,8 +34,14 @@ Built with [LÖVE 11.5](https://love2d.org). Pure Lua, deterministic procgen —
 | Input | Action |
 |---|---|
 | `r` | New run (new seed) |
+| `F11` | Toggle fullscreen |
 | `esc` | Quit |
 | `F1` – `F4` | Toggle debug overlays (palette / sprite base / entities / audio) |
+
+The window auto-sizes to fit your desktop on first launch and is
+resizable; the game always renders into a fixed 800×600 canvas that
+gets scaled and centered (letterbox bars when the window aspect
+doesn't match 4:3).
 
 ## Running from source
 
