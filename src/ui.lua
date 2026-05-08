@@ -186,8 +186,9 @@ function M.draw_hud(game)
 
     love.graphics.setColor(palette.paper)
     love.graphics.print(
-        ("PHASE: %s    seed: %d    FPS: %d")
-            :format(game.phase:upper(), game.seed, love.timer.getFPS()),
+        ("PHASE: %s    WAVE %d    seed: %d    FPS: %d")
+            :format(game.phase:upper(), game.wave, game.seed,
+                love.timer.getFPS()),
         8, 8)
 
     if game.phase == state.PHASE_BUILD then
@@ -241,8 +242,14 @@ function M.draw_build_toolbar(game)
             tool_is_selected(game, tool), font)
     end
 
+    -- Budget label shows spent / total with the bonus stacked separately
+    -- so the player sees "you've earned +N from cleared waves" at a glance.
+    local total = state.total_budget(game)
     local budget_str = ("BUDGET %d / %d"):format(
-        state.spent_budget(game), state.BUDGET)
+        state.spent_budget(game), total)
+    if game.budget_bonus > 0 then
+        budget_str = budget_str .. (" (+%d)"):format(game.budget_bonus)
+    end
     love.graphics.setColor(palette.paper)
     local bw = font:getWidth(budget_str)
     love.graphics.print(budget_str,
@@ -440,45 +447,41 @@ function M.draw_result(game)
 
     local font = love.graphics.getFont()
     local W = viewport.CANVAS_W
-    local title, color
-    if game.outcome == state.OUTCOME_TREASURE_STOLEN then
-        title = "TREASURE STOLEN"
-        color = palette.ember
-    elseif game.outcome == state.OUTCOME_HERO_DEAD then
-        title = "HERO DEFEATED"
-        color = palette.lighten(palette.moss, 0.20)
-    else
-        title = "RUN OVER"
-        color = palette.bone
-    end
 
+    -- Run over: only one outcome ends a multi-wave run (treasure stolen).
+    -- Title leans neutral so the focal stat below carries the emotional
+    -- weight — "Wave N" is what the player wants to see, not the loss.
+    local title = "RUN OVER"
+    local color = palette.ember
     love.graphics.setColor(color)
     local title_scale = 3
     local tw = font:getWidth(title) * title_scale
     love.graphics.print(title, (W - tw) / 2, 188, 0, title_scale, title_scale)
 
-    -- Big focal stat: "X / Y" in paper at scale 2.5, then a small
-    -- "heroes defeated" caption right under it. The number is the eye
-    -- target; the caption is just context.
-    local big = ("%d / %d"):format(count_defeated(game.heroes), game.num_heroes)
+    -- Big focal stat: "Wave N" (last_wave is the wave the player reached
+    -- on the run that just ended). Largest number on the panel — the
+    -- score the player will compare across runs.
+    local big = ("WAVE %d"):format(game.session.last_wave)
     local big_scale = 2.5
     local bw = font:getWidth(big) * big_scale
     love.graphics.setColor(palette.paper)
     love.graphics.print(big, (W - bw) / 2, 240, 0, big_scale, big_scale)
 
-    local cap = "heroes defeated"
+    local cap = "reached"
     local cw = font:getWidth(cap)
     love.graphics.setColor(palette.stone_light)
     love.graphics.print(cap, (W - cw) / 2, 285)
 
-    -- W/L chips with semantic colors so the player reads "good thing /
-    -- bad thing" before reading the numbers.
+    -- Session chips: BEST = highest wave across the session (the
+    -- aspiration), RUNS = total runs ended (cumulative attempts). Both
+    -- persist across reset, so the player tracks improvement over the
+    -- whole sitting, not just this dungeon.
     local total_w = CHIP_W * 2 + CHIP_GAP
     local chip_x  = math.floor((W - total_w) / 2)
     draw_chip(chip_x, CHIP_Y, CHIP_W, CHIP_H,
-        ("%d W"):format(game.session.wins), CHIP_W_COLOR, font)
+        ("BEST %d"):format(game.session.best_wave), CHIP_W_COLOR, font)
     draw_chip(chip_x + CHIP_W + CHIP_GAP, CHIP_Y, CHIP_W, CHIP_H,
-        ("%d L"):format(game.session.losses), CHIP_L_COLOR, font)
+        ("RUNS %d"):format(game.session.runs), CHIP_L_COLOR, font)
 
     local mx, my = viewport.mouse_position()
 
@@ -536,14 +539,14 @@ function M.draw_tutorial(game)
         0, title_scale, title_scale)
 
     local body = {
-        "You ARE the dungeon. A wave of heroes invades through",
-        "the door — your monsters and walls must stop them",
-        "from reaching the throne.",
+        "You ARE the dungeon. Endless waves of heroes invade",
+        "through the door — survive as many as you can.",
+        "Each wave you clear earns +5 budget for the next.",
         "",
         "1 / 2 / 3   pick a monster",
         "4           switch to wall tool",
         "LMB         place    RMB    remove",
-        "SPACE       launch invasion",
+        "SPACE       launch the next wave",
     }
     love.graphics.setColor(palette.bone)
     for i, line in ipairs(body) do

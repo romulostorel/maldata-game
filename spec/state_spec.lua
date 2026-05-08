@@ -127,21 +127,36 @@ describe("state", function()
     end)
 
     describe("advance", function()
-        it("cycles build -> invasion -> result -> build", function()
+        it("BUILD->INVASION promotes the wave; RESULT->BUILD retries", function()
             local s = state.new(1)
             assert.are.equal(state.PHASE_BUILD, s.phase)
             state.advance(s)
             assert.are.equal(state.PHASE_INVASION, s.phase)
-            state.advance(s)
-            assert.are.equal(state.PHASE_RESULT, s.phase)
+            -- Force a treasure-stolen result, then retry.
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            s.phase   = state.PHASE_RESULT
             state.advance(s)
             assert.are.equal(state.PHASE_BUILD, s.phase)
         end)
 
-        it("does not regenerate the dungeon when wrapping back to build", function()
+        it("is a no-op while INVASION is mid-wave", function()
+            -- Wave transitions are automatic (next-wave on heroes-dead,
+            -- run-over on treasure-stolen). state.advance during INVASION
+            -- must NOT short-circuit either.
+            local s = state.new(1)
+            state.advance(s)
+            assert.are.equal(state.PHASE_INVASION, s.phase)
+            state.advance(s)
+            assert.are.equal(state.PHASE_INVASION, s.phase)
+        end)
+
+        it("does not regenerate the dungeon on retry", function()
             local s = state.new(7)
             local original_grid = s.dungeon.grid
-            for _ = 1, 3 do state.advance(s) end
+            state.advance(s)
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            s.phase   = state.PHASE_RESULT
+            state.advance(s)
             assert.are.equal(state.PHASE_BUILD, s.phase)
             assert.are.equal(original_grid, s.dungeon.grid)
         end)
@@ -534,11 +549,21 @@ describe("state", function()
     end)
 
     describe("retry (advance from result back to build)", function()
+        -- Drive the run to RESULT (treasure stolen) without hand-rolling the
+        -- combat: helper just slams the phase + outcome so we can exercise
+        -- the retry transition in isolation.
+        local function force_result(s)
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            s.phase   = state.PHASE_RESULT
+        end
+
         it("clears placed monsters", function()
             local s = state.new(7)
             local t = free_tiles(s, 1)[1]
             state.try_place_monster(s, t.x, t.y)
-            state.advance(s); state.advance(s); state.advance(s)
+            state.advance(s)
+            force_result(s)
+            state.advance(s)
             assert.are.equal(state.PHASE_BUILD, s.phase)
             assert.are.equal(0, #s.monsters)
         end)
@@ -547,7 +572,9 @@ describe("state", function()
             local s = state.new(7)
             local t = free_tiles(s, 1)[1]
             assert.is_true(state.try_place_wall(s, t.x, t.y))
-            state.advance(s); state.advance(s); state.advance(s)
+            state.advance(s)
+            force_result(s)
+            state.advance(s)
             assert.are.same({}, s.placed_walls)
             assert.are.equal(dungeon.FLOOR, s.dungeon.grid[t.y][t.x])
         end)
@@ -560,9 +587,24 @@ describe("state", function()
             end
             state.try_place_wall(s, free_tiles(s, 4)[4].x, free_tiles(s, 4)[4].y)
             assert.is_true(state.spent_budget(s) > 0)
-            state.advance(s); state.advance(s); state.advance(s)
+            state.advance(s)
+            force_result(s)
+            state.advance(s)
             assert.are.equal(0, state.spent_budget(s))
             assert.are.equal(state.BUDGET, state.remaining_budget(s))
+        end)
+
+        it("rewinds wave + budget_bonus to wave 1", function()
+            local s = state.new(7)
+            s.wave = 4
+            s.budget_bonus = 15
+            s.num_heroes = 6
+            state.advance(s)
+            force_result(s)
+            state.advance(s)
+            assert.are.equal(1, s.wave)
+            assert.are.equal(0, s.budget_bonus)
+            assert.are.equal(state.DEFAULT_NUM_HEROES, s.num_heroes)
         end)
 
         it("preserves the dungeon layout (same entrance + treasure + grid object)", function()
@@ -570,7 +612,9 @@ describe("state", function()
             local original_grid = s.dungeon.grid
             local ex, ey = s.dungeon.entrance.x, s.dungeon.entrance.y
             local tx, ty = s.dungeon.treasure.x, s.dungeon.treasure.y
-            state.advance(s); state.advance(s); state.advance(s)
+            state.advance(s)
+            force_result(s)
+            state.advance(s)
             assert.are.equal(original_grid, s.dungeon.grid)
             assert.are.equal(ex, s.dungeon.entrance.x)
             assert.are.equal(ey, s.dungeon.entrance.y)
@@ -639,7 +683,10 @@ describe("state", function()
             local s = state.new(7)
             state.advance(s)
             s.heroes = {}
-            s.hero_queue = {}
+            -- Keep one hero in the queue so the wave doesn't auto-end on
+            -- the warrior's death (which would reset the orc's HP via the
+            -- between-wave heal — masking the assertion under test).
+            s.hero_queue = { make_hero(hero.MAGE, 0, 0) }
             local h = make_hero(hero.WARRIOR,
                 s.dungeon.entrance.x, s.dungeon.entrance.y)
             h.hp = 1
@@ -896,7 +943,7 @@ describe("state", function()
             state.step_invasion(s)
             assert.is_true(#s.corpses > 0)
             -- Force result, then back to build.
-            s.outcome = state.OUTCOME_HERO_DEAD
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
             s.phase   = state.PHASE_RESULT
             state.advance(s)
             assert.are.equal(state.PHASE_BUILD, s.phase)
@@ -1041,44 +1088,66 @@ describe("state", function()
     end)
 
     describe("session counters", function()
-        it("starts at zero wins/losses", function()
+        it("starts at zero best_wave/last_wave/runs", function()
             local s = state.new(1)
-            assert.are.equal(0, s.session.wins)
-            assert.are.equal(0, s.session.losses)
+            assert.are.equal(0, s.session.best_wave)
+            assert.are.equal(0, s.session.last_wave)
+            assert.are.equal(0, s.session.runs)
         end)
 
-        it("increments wins on hero_dead transition", function()
+        it("clearing a wave bumps state.wave but does not end the run", function()
             local s = state.new(7)
-            state.advance(s)
+            state.advance(s)  -- BUILD -> INVASION (wave 1)
+            -- Force the wave to end by killing all heroes.
+            s.heroes = {}
             s.hero_queue = {}
-            s.heroes[1].hp = 1
-            local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
-            inject_monster(s, monster.ORC, mx, my)
+            -- Run one tick: the end-of-wave check runs at the end of the
+            -- step and triggers the between-wave transition.
             state.step_invasion(s)
-            assert.are.equal(state.OUTCOME_HERO_DEAD, s.outcome)
-            assert.are.equal(1, s.session.wins)
-            assert.are.equal(0, s.session.losses)
+            assert.are.equal(state.PHASE_BUILD, s.phase)
+            assert.are.equal(2, s.wave)
+            assert.are.equal(state.WAVE_BUDGET_BONUS, s.budget_bonus)
+            assert.is_nil(s.outcome)
+            assert.are.equal(0, s.session.runs)
         end)
 
-        it("increments losses on treasure_stolen transition", function()
+        it("invasion start updates best_wave (highest wave attempted)", function()
             local s = state.new(7)
+            assert.are.equal(0, s.session.best_wave)
+            state.advance(s)  -- start wave 1
+            assert.are.equal(1, s.session.best_wave)
+            -- Simulate clearing wave 1.
+            s.heroes = {}
+            s.hero_queue = {}
+            state.step_invasion(s)
+            assert.are.equal(2, s.wave)
+            assert.are.equal(1, s.session.best_wave)
+            state.advance(s)  -- start wave 2
+            assert.are.equal(2, s.session.best_wave)
+        end)
+
+        it("increments runs + remembers last_wave on treasure_stolen", function()
+            local s = state.new(7)
+            s.wave = 3
             state.advance(s)
-            for _ = 1, 200 do
+            for _ = 1, 400 do
                 if s.phase == state.PHASE_RESULT then break end
                 state.step_invasion(s)
             end
             assert.are.equal(state.OUTCOME_TREASURE_STOLEN, s.outcome)
-            assert.are.equal(0, s.session.wins)
-            assert.are.equal(1, s.session.losses)
+            assert.are.equal(1, s.session.runs)
+            assert.are.equal(3, s.session.last_wave)
         end)
 
         it("preserves session counters across reset", function()
             local s = state.new(7)
-            s.session.wins = 3
-            s.session.losses = 2
+            s.session.best_wave = 5
+            s.session.last_wave = 3
+            s.session.runs = 2
             state.reset(s, 42)
-            assert.are.equal(3, s.session.wins)
-            assert.are.equal(2, s.session.losses)
+            assert.are.equal(5, s.session.best_wave)
+            assert.are.equal(3, s.session.last_wave)
+            assert.are.equal(2, s.session.runs)
         end)
     end)
 
@@ -1104,12 +1173,28 @@ describe("state", function()
             assert.are.equal(0, #s.wave_preview)
         end)
 
-        it("re-rolls a fresh preview on return to build", function()
+        it("re-rolls a fresh preview on retry from RESULT", function()
             local s = state.new(7)
             state.advance(s)  -- build -> inv
             assert.are.equal(0, #s.wave_preview)
-            state.advance(s)  -- inv -> result
-            state.advance(s)  -- result -> build
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            s.phase   = state.PHASE_RESULT
+            state.advance(s)  -- result -> build (retry)
+            assert.are.equal(s.num_heroes, #s.wave_preview)
+        end)
+
+        it("re-rolls a fresh preview between waves", function()
+            local s = state.new(7)
+            state.advance(s)  -- enter wave 1 invasion
+            assert.are.equal(0, #s.wave_preview)
+            -- Force the wave to end (no heroes alive, queue empty).
+            s.heroes = {}
+            s.hero_queue = {}
+            state.step_invasion(s)
+            assert.are.equal(state.PHASE_BUILD, s.phase)
+            assert.are.equal(2, s.wave)
+            -- Wave 2 has +1 hero on top of DEFAULT_NUM_HEROES.
+            assert.are.equal(state.DEFAULT_NUM_HEROES + 1, s.num_heroes)
             assert.are.equal(s.num_heroes, #s.wave_preview)
         end)
 
@@ -1152,11 +1237,12 @@ describe("state", function()
             assert.are.equal(a.heroes[1].atk, b.heroes[1].atk)
         end)
 
-        it("clears the hero on advance back to build", function()
+        it("clears the hero on retry from RESULT", function()
             local s = state.new(7)
             state.advance(s)
-            state.advance(s)
             assert.is_not_nil(s.heroes[1])
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            s.phase   = state.PHASE_RESULT
             state.advance(s)
             assert.is_nil(s.heroes[1])
         end)
@@ -1165,7 +1251,9 @@ describe("state", function()
             local s = state.new(7)
             state.advance(s)
             local first = s.heroes[1]
-            state.advance(s); state.advance(s)
+            s.outcome = state.OUTCOME_TREASURE_STOLEN
+            s.phase   = state.PHASE_RESULT
+            state.advance(s)
             state.advance(s)
             assert.is_not_nil(s.heroes[1])
             assert.are.equal(s.dungeon.entrance.x, s.heroes[1].x)
@@ -1241,11 +1329,15 @@ describe("state", function()
                 assert.is_true(s.heroes[1].hp < hp_before)
             end)
 
-            it("the wave ends with hero_dead when the last hero falls", function()
+            it("the wave advances back to BUILD when the last hero falls", function()
                 -- Empty the queue to simulate a one-hero wave: only the
-                -- leader is in play, so its death must end the run.
+                -- leader is in play, so its death must end the wave (NOT
+                -- the run — multi-wave: the player drops back into BUILD
+                -- with a budget bonus and the next wave pre-rolled).
                 local s = state.new(7)
                 state.advance(s)
+                local wave_before = s.wave
+                local bonus_before = s.budget_bonus
                 s.hero_queue = {}
                 s.heroes[1].hp = 1
                 local mx, my = first_floor_neighbor(s, s.heroes[1].x, s.heroes[1].y)
@@ -1253,9 +1345,11 @@ describe("state", function()
 
                 state.step_invasion(s)
 
-                assert.are.equal(state.PHASE_RESULT, s.phase)
-                assert.are.equal(state.OUTCOME_HERO_DEAD, s.outcome)
-                assert.is_false(s.heroes[1].alive)
+                assert.are.equal(state.PHASE_BUILD, s.phase)
+                assert.are.equal(wave_before + 1, s.wave)
+                assert.are.equal(bonus_before + state.WAVE_BUDGET_BONUS,
+                    s.budget_bonus)
+                assert.is_nil(s.outcome)
             end)
 
             it("a single hero dying does not end the wave when peers remain", function()

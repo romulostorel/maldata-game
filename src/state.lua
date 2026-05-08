@@ -21,9 +21,10 @@ M.PHASE_INVASION = "invasion"
 M.PHASE_RESULT   = "result"
 
 -- Build-phase economy. Each monster type has a cost in monster.TYPES; the
--- player can spend up to BUDGET total. Picked from playtest sims at
--- ~40% defender win rate against a 3-hero wave — high enough that
--- placement matters, low enough that the player has real agency.
+-- player can spend up to BUDGET (+ wave-survival bonuses) total. Initial
+-- value picked from playtest sims at ~40% defender win rate against a
+-- 3-hero wave — high enough that placement matters, low enough that the
+-- player has real agency.
 M.BUDGET = 14
 
 -- Walls also draw from the budget: cheap (1) so a maze is still affordable,
@@ -31,17 +32,30 @@ M.BUDGET = 14
 -- dominates: free walls can fully serpentine the path without any tradeoff.
 M.WALL_COST = 1
 
--- One invasion = a wave of N heroes. The first marches in immediately;
--- the rest queue up and step onto the entrance one per tick once it's
--- clear, so the wave staggers naturally without needing tile stacking.
--- Tests can override per-state via `state.num_heroes = 1`.
+-- Wave 1 hero count. Each subsequent wave adds 1 more hero up to
+-- WAVE_HERO_CAP; once the count caps, surplus waves crank up hero stats
+-- via hero_buff_for_wave instead. The cap exists because the entrance
+-- queue is single-file: more than ~6 heroes pile up before they finish
+-- spawning, and the wave gets crushed by its own latency rather than the
+-- defender's design.
 M.DEFAULT_NUM_HEROES = 3
+M.WAVE_HERO_CAP = 6
+
+-- Refund + reinforcement granted at the end of each cleared wave. Added
+-- to the budget pool (state.budget_bonus accumulates across the run) so
+-- the player can keep up with escalating waves without having to remove
+-- and re-place from scratch every time. Calibrated so a player who
+-- survives wave N with most monsters intact has 5-7 extra points to
+-- reinforce — enough for an Orc or two Goblins, not a full rebuild.
+M.WAVE_BUDGET_BONUS = 5
 
 M.TOOL_MONSTER = "monster"
 M.TOOL_WALL    = "wall"
 
+-- Only one outcome ends a multi-wave run: a hero touched the treasure.
+-- Heroes-dead is a wave-end signal, handled inline by advance_to_next_wave
+-- (it returns to BUILD instead of RESULT).
 M.OUTCOME_TREASURE_STOLEN = "treasure_stolen"
-M.OUTCOME_HERO_DEAD       = "hero_dead"
 
 -- Orc passive: a slain orc leaves a corpse that blocks its tile for this
 -- many invasion ticks. Decremented at the END of each tick, so a corpse
@@ -68,11 +82,20 @@ end
 -- read them all before the next tick lands.
 M.STEP_INTERVAL = 0.6
 
-local PHASE_ORDER = {
-    M.PHASE_BUILD,
-    M.PHASE_INVASION,
-    M.PHASE_RESULT,
-}
+-- Hero count for a given wave number, capped so the entrance queue stays
+-- spawnable. Wave 1 = DEFAULT_NUM_HEROES; +1 per subsequent wave.
+local function hero_count_for_wave(wave)
+    return math.min(M.DEFAULT_NUM_HEROES + (wave - 1), M.WAVE_HERO_CAP)
+end
+
+-- Stat buff applied uniformly to HP and ATK once the wave count caps.
+-- For waves 1..(WAVE_HERO_CAP - DEFAULT_NUM_HEROES + 1) it's 0 — escalation
+-- comes from numbers. After that, each extra wave adds +1 to base hp and
+-- atk before the per-class variance roll, so the run gets monotonically
+-- harder forever (defining the run's natural ceiling).
+local function hero_buff_for_wave(wave)
+    return math.max(0, wave - (M.WAVE_HERO_CAP - M.DEFAULT_NUM_HEROES + 1))
+end
 
 -- Pre-roll the next wave so the player sees the heroes they'll face during
 -- BUILD. The same hero objects are promoted to heroes/queue at invasion
@@ -85,9 +108,10 @@ local PHASE_ORDER = {
 local function roll_wave(state)
     state.wave_preview = {}
     local entrance = state.dungeon.entrance
+    local buff = hero_buff_for_wave(state.wave)
     for _ = 1, state.num_heroes do
         table.insert(state.wave_preview,
-            hero.new(state.rng, entrance.x, entrance.y))
+            hero.new(state.rng, entrance.x, entrance.y, buff))
     end
     if state.wave_preview[1] and state.wave_preview[1].class ~= hero.WARRIOR then
         for i = 2, #state.wave_preview do
@@ -110,7 +134,12 @@ function M.new(seed)
         placed_walls = {},
         selected_monster_type = monster.GOBLIN,
         selected_tool = M.TOOL_MONSTER,
-        num_heroes = M.DEFAULT_NUM_HEROES,
+        -- Run progression: wave starts at 1 and increments each time the
+        -- player clears a wave (handled inline in step_invasion). num_heroes
+        -- + buff are derived from wave so they refresh on every advance.
+        wave = 1,
+        budget_bonus = 0,
+        num_heroes = hero_count_for_wave(1),
         heroes = {},      -- alive (and recently dead) heroes inside the dungeon
         hero_queue = {},  -- pre-rolled heroes still waiting to enter
         wave_preview = {}, -- next wave's heroes, shown during BUILD
@@ -123,16 +152,15 @@ function M.new(seed)
         step_timer = 0,
         -- Session counters span the program run, NOT a single dungeon.
         -- state.reset preserves them so "new dungeon" still tallies.
-        session = { wins = 0, losses = 0 },
+        --   best_wave: highest wave the player ever invaded with this run
+        --   last_wave: wave reached on the most recent ended run (focal
+        --              stat on the result panel)
+        --   runs:      total runs ended (i.e., losses, since runs only end
+        --              by treasure-stolen)
+        session = { best_wave = 0, last_wave = 0, runs = 0 },
     }
     roll_wave(s)
     return s
-end
-
-local function index_of(phase)
-    for i, p in ipairs(PHASE_ORDER) do
-        if p == phase then return i end
-    end
 end
 
 local PHASE_AMBIENT = {
@@ -142,19 +170,20 @@ local PHASE_AMBIENT = {
 }
 
 -- Single chokepoint for phase changes. Plays the generic phase_transition
--- stinger on every real change, except when entering RESULT — there the
--- outcome-specific sting (victory if the hero died, defeat if the treasure
--- was stolen) replaces it. state.outcome must already be set before
--- transitioning to RESULT for the right sting to fire. Also swaps the
--- looping ambient drone to match the destination phase.
+-- stinger on every real change, except when entering RESULT (treasure
+-- stolen) — there the defeat sting replaces it and the run counter ticks.
+-- state.outcome must already be set before transitioning to RESULT for
+-- the right sting to fire.
 local function set_phase(state, new_phase)
     if state.phase == new_phase then return end
-    if new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_HERO_DEAD then
-        audio.play("victory_sting")
-        state.session.wins = state.session.wins + 1
-    elseif new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_TREASURE_STOLEN then
+    if new_phase == M.PHASE_RESULT and state.outcome == M.OUTCOME_TREASURE_STOLEN then
         audio.play("defeat_sting")
-        state.session.losses = state.session.losses + 1
+        state.session.runs = state.session.runs + 1
+        state.session.last_wave = state.wave
+    elseif state.phase == M.PHASE_INVASION and new_phase == M.PHASE_BUILD then
+        -- Between-wave: the wave just cleared. Victory cue, then drop
+        -- back into the build ambient drone.
+        audio.play("victory_sting")
     else
         audio.play("phase_transition")
     end
@@ -162,65 +191,115 @@ local function set_phase(state, new_phase)
     state.phase = new_phase
 end
 
-function M.advance(state)
-    local i = index_of(state.phase)
-    local next_phase = PHASE_ORDER[(i % #PHASE_ORDER) + 1]
-
-    if next_phase == M.PHASE_INVASION then
-        state.heroes = {}
-        state.hero_queue = {}
-        state.corpses = {}
-        -- Promote the pre-rolled wave: first hero takes the entrance, the
-        -- rest sit in the queue and step in one per tick. Same identities
-        -- the player saw during BUILD — no re-roll here.
-        for n, h in ipairs(state.wave_preview) do
-            if n == 1 then
-                table.insert(state.heroes, h)
-            else
-                table.insert(state.hero_queue, h)
-            end
-        end
-        state.wave_preview = {}
-        state.outcome = nil
-        state.auto_step = true
-        state.step_timer = 0
-    elseif next_phase == M.PHASE_BUILD then
-        state.heroes = {}
-        state.hero_queue = {}
-        state.corpses = {}
-        state.outcome = nil
-        -- Retry semantics: dungeon stays the same, but the build is wiped
-        -- so the player gets a full budget back to react to the lesson.
-        -- The rng keeps moving (no reset) so each retry rolls a new wave.
-        state.monsters = {}
-        for k in pairs(state.placed_walls) do
-            local y = math.floor(k / 100)
-            local x = k - y * 100
-            state.dungeon.grid[y][x] = dungeon.FLOOR
-        end
-        state.placed_walls = {}
-        roll_wave(state)
+-- Wipe the player's build between runs: dungeon stays the same, but
+-- monsters and player-placed walls clear so the next run starts fresh.
+local function clear_build(state)
+    state.monsters = {}
+    for k in pairs(state.placed_walls) do
+        local y = math.floor(k / 100)
+        local x = k - y * 100
+        state.dungeon.grid[y][x] = dungeon.FLOOR
     end
-
-    set_phase(state, next_phase)
+    state.placed_walls = {}
 end
 
-function M.reset(state, seed)
-    state.seed = seed
-    state.rng = rand.new(seed)
-    state.dungeon = dungeon.generate(seed)
-    state.monsters = {}
-    state.placed_walls = {}
-    state.selected_monster_type = monster.GOBLIN
-    state.selected_tool = M.TOOL_MONSTER
-    state.num_heroes = M.DEFAULT_NUM_HEROES
+-- Reset run-progress state to its wave-1 baseline. Used by RESULT→BUILD
+-- (retry) and by M.reset (new dungeon). Session counters intentionally
+-- preserved so the W/L tally spans the program run.
+local function reset_run(state)
+    state.wave = 1
+    state.budget_bonus = 0
+    state.num_heroes = hero_count_for_wave(1)
     state.heroes = {}
     state.hero_queue = {}
     state.corpses = {}
     state.outcome = nil
     state.auto_step = true
     state.step_timer = 0
+    clear_build(state)
     roll_wave(state)
+end
+
+-- BUILD → INVASION: promote the pre-rolled wave, snap session counters,
+-- and flip the phase. Heroes' identities are preserved by reference so
+-- the cards the player saw during BUILD are exactly who steps onto the
+-- entrance.
+local function start_invasion(state)
+    state.heroes = {}
+    state.hero_queue = {}
+    state.corpses = {}
+    for n, h in ipairs(state.wave_preview) do
+        if n == 1 then
+            table.insert(state.heroes, h)
+        else
+            table.insert(state.hero_queue, h)
+        end
+    end
+    state.wave_preview = {}
+    state.outcome = nil
+    state.auto_step = true
+    state.step_timer = 0
+    if state.wave > state.session.best_wave then
+        state.session.best_wave = state.wave
+    end
+    set_phase(state, M.PHASE_INVASION)
+end
+
+-- INVASION → BUILD (between waves): the wave just cleared. Bump the wave
+-- counter, refund/reinforce the budget, prune dead monsters, restore HP
+-- on survivors so they enter the next fight at full strength, and roll
+-- the next wave's preview. The player drops back into BUILD with their
+-- existing layout intact and N more points to spend on reinforcement.
+local function advance_to_next_wave(state)
+    state.wave = state.wave + 1
+    state.budget_bonus = state.budget_bonus + M.WAVE_BUDGET_BONUS
+    state.num_heroes = hero_count_for_wave(state.wave)
+
+    local survivors = {}
+    for _, m in ipairs(state.monsters) do
+        if m.alive then
+            m.hp = m.max_hp
+            -- Wipe transient render flags so the next wave's animations
+            -- don't reuse stale tween / attack-flash timestamps.
+            m._smooth_tx, m._smooth_ty = nil, nil
+            m._smooth_px, m._smooth_py = nil, nil
+            m._tween_at = nil
+            m._attack_at, m._death_at = nil, nil
+            table.insert(survivors, m)
+        end
+    end
+    state.monsters = survivors
+
+    state.heroes = {}
+    state.hero_queue = {}
+    state.corpses = {}
+    state.outcome = nil
+    state.step_timer = 0
+    roll_wave(state)
+    set_phase(state, M.PHASE_BUILD)
+end
+
+-- The only player-driven phase transitions:
+--   BUILD  → INVASION (start the wave)
+--   RESULT → BUILD    (retry from wave 1, same dungeon)
+-- INVASION transitions are automatic and handled inside step_invasion
+-- (next-wave on heroes-dead, run-over on treasure-stolen).
+function M.advance(state)
+    if state.phase == M.PHASE_BUILD then
+        start_invasion(state)
+    elseif state.phase == M.PHASE_RESULT then
+        reset_run(state)
+        set_phase(state, M.PHASE_BUILD)
+    end
+end
+
+function M.reset(state, seed)
+    state.seed = seed
+    state.rng = rand.new(seed)
+    state.dungeon = dungeon.generate(seed)
+    state.selected_monster_type = monster.GOBLIN
+    state.selected_tool = M.TOOL_MONSTER
+    reset_run(state)
     set_phase(state, M.PHASE_BUILD)
 end
 
@@ -247,7 +326,14 @@ function M.spent_budget(state)
 end
 
 function M.remaining_budget(state)
-    return M.BUDGET - M.spent_budget(state)
+    return M.BUDGET + state.budget_bonus - M.spent_budget(state)
+end
+
+-- Total budget pool currently available (initial + accumulated wave
+-- bonuses). UI shows this so the player sees the pool growing across
+-- waves, not just "spent / 14" forever.
+function M.total_budget(state)
+    return M.BUDGET + state.budget_bonus
 end
 
 function M.can_place_monster(state, x, y)
@@ -625,9 +711,11 @@ function M.step_invasion(state, on_event)
     spawn_from_queue(state)
 
     -- End of wave: queue empty AND no living hero left in the dungeon.
+    -- The run continues — the player drops back into BUILD with a
+    -- refund and the next wave pre-rolled. The run only ends when a
+    -- hero touches the treasure (handled inline above).
     if #state.hero_queue == 0 and not any_hero_alive(state) then
-        state.outcome = M.OUTCOME_HERO_DEAD
-        set_phase(state, M.PHASE_RESULT)
+        advance_to_next_wave(state)
     end
 end
 

@@ -51,11 +51,15 @@ end
 
 -- rand: function(n) -> integer in 1..n. Use rand.new(seed) for determinism
 -- or math.random for arbitrary variation.
-function M.new(rand, x, y)
+-- buff (optional, default 0): added uniformly to base hp and atk before
+-- the per-class variance roll. State.lua scales this with the wave count
+-- to keep the run pressure rising once the wave-size cap kicks in.
+function M.new(rand, x, y, buff)
+    buff = buff or 0
     local class_key = CLASS_KEYS[rand(#CLASS_KEYS)]
     local c = M.CLASSES[class_key]
-    local hp = roll(rand, c.hp, c.hp_var)
-    local atk = roll(rand, c.atk, c.atk_var)
+    local hp = roll(rand, c.hp + buff, c.hp_var)
+    local atk = roll(rand, c.atk + buff, c.atk_var)
     return {
         class = class_key,
         x = x, y = y,
